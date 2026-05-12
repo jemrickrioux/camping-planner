@@ -146,18 +146,54 @@ function PriceGrid({ rows }: { rows: EpicerieRow[] }) {
       <div className="bg-sky-50 border-b border-sky-200 px-4 py-2 text-xs text-sky-900">
         Entre la <strong>taille du pack</strong> (dans l'unité du menu : g, ml, unité, tranches…) et le <strong>prix du pack</strong>. Toggle <span className="bg-amber-100 px-1 rounded">⤴ entier</span> pour œufs/paquets, <span className="bg-sky-100 px-1 rounded">≈ continu</span> pour kg/L.
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+
+      {/* MOBILE: card stack */}
+      <div className="md:hidden">
+        {sectionsInOrder.map((section) => {
+          const sectionRows = rows.filter((r) => r.section === section);
+          const meta = SECTION_META[section] ?? { color: "", emoji: "📦" };
+          const sectionTotal = sectionRows.reduce((s, r) => s + r.effectiveCost, 0);
+          return (
+            <div key={section}>
+              <div className="bg-slate-100/50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted flex items-center justify-between">
+                <span>{meta.emoji} {section}</span>
+                {sectionTotal > 0 && <span className="text-right tabular-nums">{formatCurrency(sectionTotal)}</span>}
+              </div>
+              {sectionRows.map((row) => (
+                <GridCard key={row.id} row={row} />
+              ))}
+            </div>
+          );
+        })}
+        <div className="bg-emerald-50 border-t-2 border-emerald-200 font-bold px-3 py-3 flex justify-between">
+          <span>TOTAL</span>
+          <span className="tabular-nums text-emerald-800">{formatCurrency(grandTotal)}</span>
+        </div>
+      </div>
+
+      {/* DESKTOP: table */}
+      <div className="hidden md:block">
+        <table className="w-full text-sm table-fixed">
+          <colgroup>
+            <col style={{ width: "40px" }} />
+            <col />
+            <col style={{ width: "80px" }} />
+            <col style={{ width: "90px" }} />
+            <col style={{ width: "110px" }} />
+            <col style={{ width: "100px" }} />
+            <col style={{ width: "140px" }} />
+            <col style={{ width: "90px" }} />
+          </colgroup>
           <thead className="bg-slate-50 sticky top-0">
             <tr className="text-left border-b border-border">
-              <th className="px-2 py-2 font-semibold w-10 text-center">✓</th>
+              <th className="px-2 py-2 font-semibold text-center">✓</th>
               <th className="px-2 py-2 font-semibold">Item</th>
-              <th className="px-2 py-2 font-semibold text-right whitespace-nowrap">Besoin</th>
-              <th className="px-2 py-2 font-semibold w-28">Pack</th>
-              <th className="px-2 py-2 font-semibold w-32 text-right">Taille</th>
-              <th className="px-2 py-2 font-semibold w-28 text-right">Prix/pack</th>
-              <th className="px-2 py-2 font-semibold w-32 text-right">À acheter</th>
-              <th className="px-2 py-2 font-semibold w-20 text-right">Total</th>
+              <th className="px-2 py-2 font-semibold text-right">Besoin</th>
+              <th className="px-2 py-2 font-semibold">Pack</th>
+              <th className="px-2 py-2 font-semibold text-right">Taille</th>
+              <th className="px-2 py-2 font-semibold text-right">Prix/pack</th>
+              <th className="px-2 py-2 font-semibold text-right">À acheter</th>
+              <th className="px-2 py-2 font-semibold text-right">Total</th>
             </tr>
           </thead>
           <tbody>
@@ -188,6 +224,118 @@ function PriceGrid({ rows }: { rows: EpicerieRow[] }) {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function GridCard({ row }: { row: EpicerieRow }) {
+  const [packLabel, setPackLabel] = useState(row.packLabel ?? "");
+  const [packSize, setPackSize] = useState(row.packSize ?? "");
+  const [packPrice, setPackPrice] = useState(row.packPrice ?? "");
+  const [packRoundUp, setPackRoundUp] = useState(row.packRoundUp);
+  const [confirmed, setConfirmed] = useState(row.confirmed ?? false);
+  const [, startTransition] = useTransition();
+  const isDrink = row.source === "drink";
+  const realId = isDrink ? row.id - 1000000 : row.id;
+  const disabled = isDrink || row.source === "note";
+
+  const save = (data: Parameters<typeof updateGroceryItem>[1]) => {
+    startTransition(() => {
+      if (isDrink) updateDrink(realId, { confirmed: data.confirmed });
+      else updateGroceryItem(realId, data);
+    });
+  };
+
+  const displayBesoin = row.source === "note" ? row.fixedText : `${row.toBuy} ${row.unit ?? ""}`;
+
+  const sizeNum = Number(packSize);
+  const priceNum = Number(packPrice);
+  let packsToBuy: number | null = null;
+  let computedTotal: number | null = null;
+  if (sizeNum > 0 && priceNum > 0) {
+    const packsRaw = row.totalWithMargin / sizeNum;
+    packsToBuy = packRoundUp ? Math.ceil(packsRaw) : Math.round(packsRaw * 100) / 100;
+    computedTotal = packsToBuy * priceNum;
+  }
+
+  return (
+    <div className={`px-3 py-3 border-b border-border space-y-2 ${confirmed ? "bg-emerald-50/40" : ""}`}>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => { const v = !confirmed; setConfirmed(v); save({ confirmed: v }); }}
+          className={`w-7 h-7 rounded-md border-2 inline-flex items-center justify-center shrink-0 transition ${
+            confirmed ? "bg-emerald-500 border-emerald-600 text-white" : "bg-white border-slate-300"
+          }`}
+        >
+          {confirmed && <span className="text-sm">✓</span>}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className={`font-semibold ${confirmed ? "line-through opacity-60" : ""}`}>{row.name}</div>
+          <div className="text-xs text-muted">
+            Besoin : <span className="font-semibold tabular-nums">{displayBesoin}</span>
+            {row.notes && <span className="ml-2">· {row.notes}</span>}
+          </div>
+        </div>
+        {computedTotal !== null && (
+          <div className="text-right">
+            <div className="text-base font-bold tabular-nums">{formatCurrency(computedTotal)}</div>
+            {packsToBuy !== null && (
+              <div className="text-xs text-muted">
+                {packRoundUp ? packsToBuy : packsToBuy.toFixed(2)} {packLabel}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {!disabled && (
+        <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] uppercase tracking-wide text-muted">Pack</span>
+            <input
+              type="text" value={packLabel}
+              onChange={(e) => setPackLabel(e.target.value)}
+              onBlur={() => save({ packLabel: packLabel || null })}
+              placeholder="kg, dz…"
+              className="px-2 py-1.5 text-sm border border-border rounded-md bg-white"
+            />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] uppercase tracking-wide text-muted">Taille ({row.unit ?? "—"})</span>
+            <input
+              type="number" step="0.01" value={packSize ?? ""}
+              onChange={(e) => setPackSize(e.target.value)}
+              onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
+              placeholder="—"
+              className="px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums w-24"
+            />
+          </label>
+          <label className="flex flex-col gap-0.5">
+            <span className="text-[10px] uppercase tracking-wide text-muted">Prix / pack</span>
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted">$</span>
+              <input
+                type="number" step="0.01" value={packPrice ?? ""}
+                onChange={(e) => setPackPrice(e.target.value)}
+                onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
+                placeholder="—"
+                className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+              />
+            </div>
+          </label>
+        </div>
+      )}
+
+      {!disabled && sizeNum > 0 && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => { const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
+            className={`text-xs px-2 py-1 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}
+          >
+            {packRoundUp ? "⤴ Arrondir aux paquets entiers" : "≈ Continu (kg, L)"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
