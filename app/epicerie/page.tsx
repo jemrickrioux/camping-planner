@@ -1,8 +1,9 @@
 import { db, schema } from "@/lib/db";
 import { getCurrentTrip, getParticipants, getConfirmedCount } from "@/lib/trip";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { EpicerieTable } from "./epicerie-table";
 import { AddGroceryForm } from "./add-grocery-form";
+import { isAtMeal, getMealKey } from "@/lib/meals";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export type EpicerieRow = {
   cost: string | null;
   confirmed: boolean | null;
   notes: string | null;
-  qtyPerPerson: number; // computed
+  qtyPerPerson: number; // average (info display)
   totalRaw: number;
   totalWithMargin: number;
   toBuy: number;
@@ -31,38 +32,47 @@ export default async function EpiceriePage() {
   const trip = await getCurrentTrip();
   const participants = await getParticipants();
   const confirmedCount = await getConfirmedCount();
+  const totalParticipants = participants.length;
 
-  // Get grocery items
   const grocery = await db.select().from(schema.groceryItems)
     .where(eq(schema.groceryItems.tripId, trip.id))
     .orderBy(schema.groceryItems.position);
 
-  // Compute qty/pers from menu via SUMIFS-like aggregation
-  const menuSums = await db
-    .select({
-      item: schema.menuItems.item,
-      total: sql<number>`SUM(${schema.menuItems.qtyPerPerson})::numeric::float8`,
-    })
-    .from(schema.menuItems)
-    .where(eq(schema.menuItems.tripId, trip.id))
-    .groupBy(schema.menuItems.item);
-  const menuMap = new Map(menuSums.map((m) => [m.item, Number(m.total)]));
+  // Per-meal attendance × menu items → per-item total quantity
+  const menuRows = await db.select().from(schema.menuItems)
+    .where(eq(schema.menuItems.tripId, trip.id));
 
-  // Drinks (pool) — appended as additional epicerie rows
+  const itemTotals = new Map<string, number>();
+  const itemAvgPerPerson = new Map<string, { sum: number; count: number }>();
+
+  for (const row of menuRows) {
+    const mealKey = getMealKey(row.day, row.meal);
+    const attendees = participants.filter((p) => isAtMeal(p, mealKey)).length;
+    const qpp = Number(row.qtyPerPerson);
+    const rowTotal = qpp * attendees;
+    itemTotals.set(row.item, (itemTotals.get(row.item) ?? 0) + rowTotal);
+    const cur = itemAvgPerPerson.get(row.item) ?? { sum: 0, count: 0 };
+    cur.sum += qpp;
+    cur.count += 1;
+    itemAvgPerPerson.set(row.item, cur);
+  }
+
   const drinks = await db.select().from(schema.drinks)
     .where(eq(schema.drinks.tripId, trip.id))
     .orderBy(schema.drinks.position);
 
-  // Build computed rows
   const rows: EpicerieRow[] = grocery.map((g) => {
     const margin = Number(g.margin ?? 1.15);
-    let qtyPerPerson = 0;
+    let totalRaw = 0;
+    let qtyPerPersonDisplay = 0;
     if (g.source === "menu" && g.matchItem) {
-      qtyPerPerson = menuMap.get(g.matchItem) ?? 0;
+      totalRaw = itemTotals.get(g.matchItem) ?? 0;
+      const avg = itemAvgPerPerson.get(g.matchItem);
+      qtyPerPersonDisplay = avg ? avg.sum : 0; // total / total-people equivalent shown as "qty pp"
     } else if (g.source === "fixed" && g.fixedQtyPerPerson) {
-      qtyPerPerson = Number(g.fixedQtyPerPerson);
+      qtyPerPersonDisplay = Number(g.fixedQtyPerPerson);
+      totalRaw = qtyPerPersonDisplay * confirmedCount;
     }
-    const totalRaw = qtyPerPerson * confirmedCount;
     const totalWithMargin = totalRaw * margin;
     const toBuy = Math.ceil(totalWithMargin);
     return {
@@ -80,17 +90,16 @@ export default async function EpiceriePage() {
       cost: g.cost,
       confirmed: g.confirmed,
       notes: g.notes,
-      qtyPerPerson,
+      qtyPerPerson: qtyPerPersonDisplay,
       totalRaw,
       totalWithMargin,
       toBuy,
     };
   });
 
-  // Pool drinks → appended as virtual rows
   drinks.forEach((d, idx) => {
     rows.push({
-      id: 1000000 + d.id, // synthetic
+      id: 1000000 + d.id,
       position: 10000 + idx,
       section: "Boissons (pool)",
       name: d.item,
@@ -111,23 +120,30 @@ export default async function EpiceriePage() {
     });
   });
 
-  // Totals
   const totalCost = rows.reduce((sum, r) => sum + Number(r.cost ?? 0), 0);
   const costPerPax = confirmedCount > 0 ? totalCost / confirmedCount : 0;
+  const allConfirmed = confirmedCount === totalParticipants;
+  const someoneNoArrival = participants.some((p) => p.confirmed === "OUI" && (!p.arrivalMeal || !p.departureMeal));
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold mb-1">🛒 Épicerie</h1>
         <p className="text-muted text-sm">
-          Liste consolidée — calculée du menu × {confirmedCount} pax × marge 15%. Modifier le Menu = recalcul automatique.
+          Calculée par <strong>présence à chaque repas</strong> : qté/pers × nb attendu au repas. Si quelqu'un arrive samedi midi, on cuisine pas pour lui le vendredi soir.
         </p>
       </div>
 
+      {someoneNoArrival && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900">
+          ⚠ Certains confirmés n'ont pas encore choisi leur 🛬 premier et 🛫 dernier repas. Les quantités les considèrent comme présents partout (optimiste).
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <Stat label="Items" value={rows.length} accent="primary" />
-        <Stat label="Total estimé" value={formatCurrency(totalCost)} accent="ok" />
-        <Stat label="Coût / pers" value={formatCurrency(costPerPax)} accent="ok" />
+        <Stat label="Total estimé" value={formatCurrency(totalCost)} accent="ok" hint={!allConfirmed ? `${confirmedCount}/${totalParticipants} confirmés` : undefined} />
+        <Stat label="Coût / pers" value={allConfirmed ? formatCurrency(costPerPax) : "—"} accent="ok" hint={!allConfirmed ? "Attendre toutes confirmations" : undefined} />
       </div>
 
       <AddGroceryForm tripId={trip.id} />
@@ -141,7 +157,7 @@ function formatCurrency(n: number) {
   return new Intl.NumberFormat("fr-CA", { style: "currency", currency: "CAD" }).format(n);
 }
 
-function Stat({ label, value, accent }: { label: string; value: React.ReactNode; accent: "primary" | "ok" }) {
+function Stat({ label, value, accent, hint }: { label: string; value: React.ReactNode; accent: "primary" | "ok"; hint?: string }) {
   const cls = {
     primary: "bg-teal-50 text-teal-900 border-teal-200",
     ok: "bg-emerald-50 text-emerald-900 border-emerald-200",
@@ -150,6 +166,7 @@ function Stat({ label, value, accent }: { label: string; value: React.ReactNode;
     <div className={`rounded-xl border p-3 ${cls}`}>
       <div className="text-xs uppercase tracking-wide opacity-70">{label}</div>
       <div className="text-xl md:text-2xl font-bold mt-1">{value}</div>
+      {hint && <div className="text-xs opacity-70 mt-0.5">{hint}</div>}
     </div>
   );
 }

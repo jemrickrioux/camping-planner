@@ -4,15 +4,15 @@ import { useState, useTransition } from "react";
 import type { Participant } from "@/db/schema";
 import { updateLift } from "@/app/actions";
 import { useWhoAmI, Avatar } from "@/components/who-am-i";
+import { MEAL_SLOTS, mealIndex } from "@/lib/meals";
 
 type Direction = "outbound" | "return";
 
-const DIR_META: Record<Direction, { label: string; emoji: string; subtitle: string; }> = {
-  outbound: { label: "Aller (vendredi 12)", emoji: "➡️", subtitle: "Vers Poisson Blanc, accueil dès 9h" },
-  return:   { label: "Retour (lundi 15)",   emoji: "⬅️", subtitle: "Départ du site avant 11h" },
+const DIR_META: Record<Direction, { label: string; emoji: string; subtitle: string; defaultDay: string; }> = {
+  outbound: { label: "Aller", emoji: "➡️", subtitle: "Vers Poisson Blanc", defaultDay: "Vendredi 12" },
+  return:   { label: "Retour", emoji: "⬅️", subtitle: "Vers la maison", defaultDay: "Lundi 15" },
 };
 
-// Per-direction field accessors
 const FIELDS: Record<Direction, {
   role: keyof Participant;
   seats: keyof Participant;
@@ -27,6 +27,15 @@ const FIELDS: Record<Direction, {
 function getF<K extends keyof Participant>(p: Participant, key: K): Participant[K] {
   return p[key];
 }
+
+function getDay(p: Participant, direction: Direction): string {
+  const mealKey = direction === "outbound" ? p.arrivalMeal : p.departureMeal;
+  if (!mealKey) return DIR_META[direction].defaultDay;
+  const slot = MEAL_SLOTS.find((s) => s.key === mealKey);
+  return slot?.day ?? DIR_META[direction].defaultDay;
+}
+
+const ALL_DAYS = ["Vendredi 12", "Samedi 13", "Dimanche 14", "Lundi 15"];
 
 export function LiftsView({ participants }: { participants: Participant[] }) {
   const [dir, setDir] = useState<Direction>("outbound");
@@ -45,7 +54,10 @@ export function LiftsView({ participants }: { participants: Participant[] }) {
           </button>
         ))}
       </div>
-      <p className="text-sm text-muted">{DIR_META[dir].subtitle}</p>
+      <p className="text-sm text-muted">
+        {DIR_META[dir].subtitle} — chaque conducteur/passager apparaît dans le jour où il arrive (ou par défaut Ven/Lun).
+        Définis tes 🛬 🛫 dans <a className="underline" href="/participants">Participants</a> pour bien classer.
+      </p>
       <DirectionView participants={participants} direction={dir} />
     </div>
   );
@@ -55,86 +67,166 @@ function DirectionView({ participants, direction }: { participants: Participant[
   const { participantId, isOrganizer } = useWhoAmI();
   const f = FIELDS[direction];
 
-  const drivers = participants.filter((p) => getF(p, f.role) === "driver");
-  const solo = participants.filter((p) => getF(p, f.role) === "self");
-  const unassigned = participants.filter((p) => !getF(p, f.role));
-  const totalSeats = drivers.reduce((sum, d) => sum + (Number(getF(d, f.seats)) || 0), 0);
+  // Filter to confirmed only (NON / ? are not part of lift planning)
+  const relevant = participants.filter((p) => p.confirmed !== "NON");
+
+  // Group by day for cars + unassigned + solo
+  type DayBucket = {
+    day: string;
+    drivers: Participant[];
+    solo: Participant[];
+    unassigned: Participant[];
+  };
+  const days = new Map<string, DayBucket>();
+  for (const d of ALL_DAYS) {
+    days.set(d, { day: d, drivers: [], solo: [], unassigned: [] });
+  }
+  for (const p of relevant) {
+    const day = getDay(p, direction);
+    const bucket = days.get(day);
+    if (!bucket) continue;
+    const role = getF(p, f.role);
+    if (role === "driver") bucket.drivers.push(p);
+    else if (role === "self") bucket.solo.push(p);
+    else bucket.unassigned.push(p);
+  }
+
+  const visibleDays = ALL_DAYS.filter((d) => {
+    const b = days.get(d)!;
+    return b.drivers.length + b.solo.length + b.unassigned.length > 0;
+  });
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Stat label="🚗 Conducteurs" value={drivers.length} accent="primary" />
-        <Stat label="🪑 Places offertes" value={totalSeats} accent="ok" />
-        <Stat label="🧍 À placer" value={unassigned.length} accent={unassigned.length > 0 ? "warn" : "ok"} />
-        <Stat label="🚙 Solo" value={solo.length} accent="muted" />
+      <DaySummary direction={direction} days={days} />
+      {visibleDays.length === 0 ? (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900">
+          Personne n'a confirmé sa présence. Confirmer dans Participants pour apparaître ici.
+        </div>
+      ) : (
+        visibleDays.map((day) => {
+          const bucket = days.get(day)!;
+          return (
+            <DaySection
+              key={day}
+              direction={direction}
+              bucket={bucket}
+              currentUserId={participantId!}
+              isOrganizer={isOrganizer}
+              allParticipants={relevant}
+            />
+          );
+        })
+      )}
+    </div>
+  );
+}
+
+function DaySummary({ direction, days }: { direction: Direction; days: Map<string, { day: string; drivers: Participant[]; solo: Participant[]; unassigned: Participant[]; }> }) {
+  const f = FIELDS[direction];
+  const items = ALL_DAYS.map((d) => {
+    const b = days.get(d)!;
+    const seats = b.drivers.reduce((s, dr) => s + (Number(getF(dr, f.seats)) || 0), 0);
+    const passengers = b.unassigned.length + b.drivers.length; // total people who need a car (drivers also count as 1 seat used by themselves)
+    return { day: d, drivers: b.drivers.length, seats, unassigned: b.unassigned.length, solo: b.solo.length, total: passengers + b.unassigned.length };
+  });
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      {items.map((i) => {
+        const isEmpty = i.drivers + i.unassigned + i.solo === 0;
+        return (
+          <div
+            key={i.day}
+            className={`rounded-xl border p-3 text-sm ${isEmpty ? "bg-slate-50 border-border opacity-50" : "bg-sky-50 border-sky-200"}`}
+          >
+            <div className="font-semibold">{i.day}</div>
+            {isEmpty ? (
+              <div className="text-xs text-muted mt-1">—</div>
+            ) : (
+              <div className="text-xs space-y-0.5 mt-1">
+                <div>🚗 {i.drivers} conducteur{i.drivers > 1 ? "s" : ""} · {i.seats} places</div>
+                {i.unassigned > 0 && <div className="text-amber-700">⏳ {i.unassigned} à placer</div>}
+                {i.solo > 0 && <div>🚙 {i.solo} solo</div>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DaySection({
+  direction, bucket, currentUserId, isOrganizer, allParticipants,
+}: {
+  direction: Direction;
+  bucket: { day: string; drivers: Participant[]; solo: Participant[]; unassigned: Participant[] };
+  currentUserId: number;
+  isOrganizer: boolean;
+  allParticipants: Participant[];
+}) {
+  const f = FIELDS[direction];
+  return (
+    <section>
+      <div className="flex items-center gap-2 mb-3">
+        <h2 className="text-lg font-bold">{bucket.day}</h2>
+        <span className="text-xs text-muted">
+          {bucket.drivers.length} auto{bucket.drivers.length > 1 ? "s" : ""} · {bucket.unassigned.length} à placer · {bucket.solo.length} solo
+        </span>
       </div>
 
-      <div>
-        <h2 className="text-base font-semibold mb-3 text-muted">🚗 Autos</h2>
-        {drivers.length === 0 ? (
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-900">
-            Personne ne s'est offert pour conduire. Choisis "🚗 Je conduis" sur ta carte.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {drivers.map((d) => {
-              const passengers = participants.filter((p) => getF(p, f.driverId) === d.id);
-              const freeSeats = (Number(getF(d, f.seats)) || 0) - passengers.length;
-              return (
-                <CarCard
-                  key={d.id}
-                  direction={direction}
-                  driver={d}
-                  passengers={passengers}
-                  freeSeats={freeSeats}
-                  currentUserId={participantId!}
-                  isOrganizer={isOrganizer}
-                  allParticipants={participants}
-                />
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {bucket.drivers.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          {bucket.drivers.map((d) => {
+            const passengers = allParticipants.filter((p) => getF(p, f.driverId) === d.id);
+            const freeSeats = (Number(getF(d, f.seats)) || 0) - passengers.length;
+            return (
+              <CarCard
+                key={d.id}
+                direction={direction}
+                driver={d}
+                passengers={passengers}
+                freeSeats={freeSeats}
+                currentUserId={currentUserId}
+                isOrganizer={isOrganizer}
+                allParticipants={allParticipants}
+              />
+            );
+          })}
+        </div>
+      )}
 
-      {solo.length > 0 && (
-        <div>
-          <h2 className="text-base font-semibold mb-3 text-muted">🚙 Viennent / partent par leurs propres moyens</h2>
+      {bucket.unassigned.length > 0 && (
+        <ul className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+          {bucket.unassigned.map((p) => (
+            <li key={p.id}>
+              <UnassignedCard
+                direction={direction}
+                participant={p}
+                drivers={bucket.drivers}
+                currentUserId={currentUserId}
+                isOrganizer={isOrganizer}
+                allParticipants={allParticipants}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {bucket.solo.length > 0 && (
+        <div className="bg-slate-50 rounded-xl p-3">
+          <div className="text-xs text-muted mb-1">🚙 Viennent par leurs propres moyens</div>
           <div className="flex flex-wrap gap-2">
-            {solo.map((p) => (
-              <span key={p.id} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 text-slate-700 text-sm">
-                <Avatar name={p.name} size={20} />
-                {p.name}
+            {bucket.solo.map((p) => (
+              <span key={p.id} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-white text-slate-700 text-xs border border-border">
+                <Avatar name={p.name} size={18} />
+                {p.name.split(" ")[0]}
               </span>
             ))}
           </div>
         </div>
       )}
-
-      <div>
-        <h2 className="text-base font-semibold mb-3 text-muted">🧍 À placer ({unassigned.length})</h2>
-        {unassigned.length === 0 ? (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-sm text-emerald-900">
-            Tout le monde a un plan pour ce trajet 🎉
-          </div>
-        ) : (
-          <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {unassigned.map((p) => (
-              <li key={p.id}>
-                <UnassignedCard
-                  direction={direction}
-                  participant={p}
-                  drivers={drivers}
-                  currentUserId={participantId!}
-                  isOrganizer={isOrganizer}
-                  allParticipants={participants}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
+    </section>
   );
 }
 
@@ -166,15 +258,20 @@ function CarCard({
   };
 
   const handleReleaseDriver = () => {
-    if (!confirm("Annuler ton offre de conduire pour ce trajet ? Les passagers seront détachés.")) return;
+    if (!confirm("Annuler ton offre de conduire pour ce trajet ?")) return;
     startTransition(() => {
       passengers.forEach((p) => updateLift(p.id, { [f.role]: null, [f.driverId]: null } as never));
       updateLift(driver.id, { [f.role]: null, [f.seats]: null, [f.from]: null, [f.time]: null } as never);
     });
   };
 
-  const meIsAssigned = !!allParticipants.find((p) => p.id === currentUserId && getF(p, f.role));
-  const canJoin = !isMyCar && freeSeats > 0 && !meIsAssigned;
+  // Joining: same day match (driver and current user both relate to driver's day)
+  const me = allParticipants.find((p) => p.id === currentUserId);
+  const myDay = me ? getDay(me, direction) : null;
+  const driverDay = getDay(driver, direction);
+  const meIsAssigned = !!(me && getF(me, f.role));
+  const canJoin = !isMyCar && freeSeats > 0 && !meIsAssigned && myDay === driverDay;
+
   const handleJoin = () => {
     startTransition(() => updateLift(currentUserId, { [f.role]: "passenger", [f.driverId]: driver.id } as never));
   };
@@ -208,7 +305,7 @@ function CarCard({
               <Avatar name={p.name} size={22} />
               <span className="flex-1 text-sm">{p.name}{p.id === currentUserId && " (toi)"}</span>
               {canLeave && (
-                <button onClick={() => handleLeaveCar(p.id)} className="text-xs text-muted hover:text-rose-600" title="Retirer">✕</button>
+                <button onClick={() => handleLeaveCar(p.id)} className="text-xs text-muted hover:text-rose-600">✕</button>
               )}
             </div>
           );
@@ -222,6 +319,12 @@ function CarCard({
       <div className="flex gap-2 mt-3 flex-wrap">
         {canJoin && (
           <button onClick={handleJoin} className="px-3 py-1.5 bg-sky-500 text-white rounded-full text-sm font-medium hover:bg-sky-600">🙋 J'embarque</button>
+        )}
+        {!canJoin && !isMyCar && freeSeats > 0 && meIsAssigned && (
+          <span className="text-xs text-muted px-3 py-1.5">tu as déjà un lift</span>
+        )}
+        {!canJoin && !isMyCar && freeSeats > 0 && !meIsAssigned && myDay !== driverDay && (
+          <span className="text-xs text-muted px-3 py-1.5">jour différent ({myDay} ≠ {driverDay})</span>
         )}
         {canEditCar && (
           <button onClick={handleReleaseDriver} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-full text-sm hover:bg-slate-200">Annuler mon offre</button>
@@ -304,7 +407,7 @@ function UnassignedCard({
           {drivers.length > 0 && (
             <details className="mt-2">
               <summary className="text-sm text-muted cursor-pointer hover:text-foreground">
-                🙋 Embarquer dans une auto ({drivers.filter(d => (Number(getF(d, f.seats)) || 0) - allParticipants.filter(p => getF(p, f.driverId) === d.id).length > 0).length} dispo)
+                🙋 Embarquer ({drivers.filter(d => (Number(getF(d, f.seats)) || 0) - allParticipants.filter(p => getF(p, f.driverId) === d.id).length > 0).length} dispo)
               </summary>
               <div className="space-y-1 mt-2">
                 {drivers.map((d) => {
@@ -348,17 +451,4 @@ function FieldInput({
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: React.ReactNode; accent: "primary" | "ok" | "warn" | "muted" }) {
-  const cls = {
-    primary: "bg-sky-50 text-sky-900 border-sky-200",
-    ok: "bg-emerald-50 text-emerald-900 border-emerald-200",
-    warn: "bg-amber-50 text-amber-900 border-amber-200",
-    muted: "bg-slate-50 text-slate-700 border-slate-200",
-  }[accent];
-  return (
-    <div className={`rounded-xl border p-3 ${cls}`}>
-      <div className="text-xs uppercase tracking-wide opacity-70">{label}</div>
-      <div className="text-xl md:text-2xl font-bold mt-1">{value}</div>
-    </div>
-  );
-}
+void mealIndex;
