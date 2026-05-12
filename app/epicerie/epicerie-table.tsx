@@ -233,16 +233,22 @@ function GridCard({ row }: { row: EpicerieRow }) {
   const [packSize, setPackSize] = useState(row.packSize ?? "");
   const [packPrice, setPackPrice] = useState(row.packPrice ?? "");
   const [packRoundUp, setPackRoundUp] = useState(row.packRoundUp);
+  const [cost, setCost] = useState(row.cost ?? "");
   const [confirmed, setConfirmed] = useState(row.confirmed ?? false);
   const [, startTransition] = useTransition();
   const isDrink = row.source === "drink";
   const realId = isDrink ? row.id - 1000000 : row.id;
-  const disabled = isDrink || row.source === "note";
+  // Simple cost mode for: drinks (alcool) and notes (condiments) — no pack pricing
+  const simpleMode = isDrink || row.source === "note";
 
   const save = (data: Parameters<typeof updateGroceryItem>[1]) => {
     startTransition(() => {
-      if (isDrink) updateDrink(realId, { confirmed: data.confirmed });
-      else updateGroceryItem(realId, data);
+      if (isDrink) {
+        // drinks: only support cost + confirmed
+        updateDrink(realId, { cost: data.cost ?? undefined, confirmed: data.confirmed });
+      } else {
+        updateGroceryItem(realId, data);
+      }
     });
   };
 
@@ -257,6 +263,8 @@ function GridCard({ row }: { row: EpicerieRow }) {
     packsToBuy = packRoundUp ? Math.ceil(packsRaw) : Math.round(packsRaw * 100) / 100;
     computedTotal = packsToBuy * priceNum;
   }
+
+  const displayedTotal = simpleMode ? Number(cost || 0) : (computedTotal ?? 0);
 
   return (
     <div className={`px-3 py-3 border-b border-border space-y-2 ${confirmed ? "bg-emerald-50/40" : ""}`}>
@@ -276,10 +284,10 @@ function GridCard({ row }: { row: EpicerieRow }) {
             {row.notes && <span className="ml-2">· {row.notes}</span>}
           </div>
         </div>
-        {computedTotal !== null && (
+        {displayedTotal > 0 && (
           <div className="text-right">
-            <div className="text-base font-bold tabular-nums">{formatCurrency(computedTotal)}</div>
-            {packsToBuy !== null && (
+            <div className="text-base font-bold tabular-nums">{formatCurrency(displayedTotal)}</div>
+            {!simpleMode && packsToBuy !== null && (
               <div className="text-xs text-muted">
                 {packRoundUp ? packsToBuy : packsToBuy.toFixed(2)} {packLabel}
               </div>
@@ -288,53 +296,65 @@ function GridCard({ row }: { row: EpicerieRow }) {
         )}
       </div>
 
-      {!disabled && (
-        <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[10px] uppercase tracking-wide text-muted">Pack</span>
-            <input
-              type="text" value={packLabel}
-              onChange={(e) => setPackLabel(e.target.value)}
-              onBlur={() => save({ packLabel: packLabel || null })}
-              placeholder="kg, dz…"
-              className="px-2 py-1.5 text-sm border border-border rounded-md bg-white"
-            />
-          </label>
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[10px] uppercase tracking-wide text-muted">Taille ({row.unit ?? "—"})</span>
-            <input
-              type="number" step="0.01" value={packSize ?? ""}
-              onChange={(e) => setPackSize(e.target.value)}
-              onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
-              placeholder="—"
-              className="px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums w-24"
-            />
-          </label>
-          <label className="flex flex-col gap-0.5">
-            <span className="text-[10px] uppercase tracking-wide text-muted">Prix / pack</span>
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-muted">$</span>
+      {simpleMode ? (
+        <label className="flex items-center gap-2">
+          <span className="text-xs text-muted shrink-0">Total $</span>
+          <input
+            type="number" step="0.01" value={cost ?? ""}
+            onChange={(e) => setCost(e.target.value)}
+            onBlur={() => save({ cost: cost === "" ? null : cost })}
+            placeholder="—"
+            className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+          />
+        </label>
+      ) : (
+        <>
+          <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
+            <label className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted">Pack</span>
               <input
-                type="number" step="0.01" value={packPrice ?? ""}
-                onChange={(e) => setPackPrice(e.target.value)}
-                onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
-                placeholder="—"
-                className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+                type="text" value={packLabel}
+                onChange={(e) => setPackLabel(e.target.value)}
+                onBlur={() => save({ packLabel: packLabel || null })}
+                placeholder="kg, dz…"
+                className="px-2 py-1.5 text-sm border border-border rounded-md bg-white"
               />
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted">Taille ({row.unit ?? "—"})</span>
+              <input
+                type="number" step="0.01" value={packSize ?? ""}
+                onChange={(e) => setPackSize(e.target.value)}
+                onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
+                placeholder={packHint(row.unit)}
+                className="px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums w-24"
+              />
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-[10px] uppercase tracking-wide text-muted">Prix / pack</span>
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-muted">$</span>
+                <input
+                  type="number" step="0.01" value={packPrice ?? ""}
+                  onChange={(e) => setPackPrice(e.target.value)}
+                  onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
+                  placeholder="—"
+                  className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+                />
+              </div>
+            </label>
+          </div>
+          {sizeNum > 0 && (
+            <div className="flex justify-end">
+              <button
+                onClick={() => { const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
+                className={`text-xs px-2 py-1 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}
+              >
+                {packRoundUp ? "⤴ Arrondir aux paquets entiers" : "≈ Continu (kg, L)"}
+              </button>
             </div>
-          </label>
-        </div>
-      )}
-
-      {!disabled && sizeNum > 0 && (
-        <div className="flex justify-end">
-          <button
-            onClick={() => { const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
-            className={`text-xs px-2 py-1 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}
-          >
-            {packRoundUp ? "⤴ Arrondir aux paquets entiers" : "≈ Continu (kg, L)"}
-          </button>
-        </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -345,14 +365,16 @@ function GridRow({ row }: { row: EpicerieRow }) {
   const [packSize, setPackSize] = useState(row.packSize ?? "");
   const [packPrice, setPackPrice] = useState(row.packPrice ?? "");
   const [packRoundUp, setPackRoundUp] = useState(row.packRoundUp);
+  const [cost, setCost] = useState(row.cost ?? "");
   const [confirmed, setConfirmed] = useState(row.confirmed ?? false);
   const [, startTransition] = useTransition();
   const isDrink = row.source === "drink";
   const realId = isDrink ? row.id - 1000000 : row.id;
+  const simpleMode = isDrink || row.source === "note";
 
   const save = (data: Parameters<typeof updateGroceryItem>[1]) => {
     startTransition(() => {
-      if (isDrink) updateDrink(realId, { confirmed: data.confirmed });
+      if (isDrink) updateDrink(realId, { cost: data.cost ?? undefined, confirmed: data.confirmed });
       else updateGroceryItem(realId, data);
     });
   };
@@ -371,6 +393,8 @@ function GridRow({ row }: { row: EpicerieRow }) {
     computedTotal = packsToBuy * priceNum;
   }
 
+  const displayedTotal = simpleMode ? Number(cost || 0) : (computedTotal ?? 0);
+
   return (
     <tr className={`border-b border-border ${confirmed ? "bg-emerald-50/40" : ""}`}>
       <td className="px-2 py-1.5 text-center">
@@ -379,7 +403,6 @@ function GridRow({ row }: { row: EpicerieRow }) {
           className={`w-6 h-6 rounded-md border-2 inline-flex items-center justify-center transition ${
             confirmed ? "bg-emerald-500 border-emerald-600 text-white" : "bg-white border-slate-300 hover:border-emerald-400"
           }`}
-          title={confirmed ? "Marquer non acheté" : "Marquer acheté"}
         >
           {confirmed && <span className="text-xs">✓</span>}
         </button>
@@ -390,66 +413,82 @@ function GridRow({ row }: { row: EpicerieRow }) {
       </td>
       <td className="px-2 py-1.5 text-right text-xs tabular-nums whitespace-nowrap text-muted">{displayBesoin}</td>
 
-      <td className="px-2 py-1.5">
-        <input
-          type="text"
-          value={packLabel}
-          onChange={(e) => setPackLabel(e.target.value)}
-          onBlur={() => save({ packLabel: packLabel || null })}
-          placeholder="kg, dz…"
-          disabled={isDrink || row.source === "note"}
-          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-white disabled:bg-slate-50"
-        />
-      </td>
+      {simpleMode ? (
+        // Simple cost mode: take 4 columns (Pack/Taille/Prix/À acheter) with one big "Total $" input
+        <td colSpan={4} className="px-2 py-1.5">
+          <div className="flex items-center gap-2 justify-end">
+            <span className="text-xs text-muted">Total $</span>
+            <input
+              type="number" step="0.01"
+              value={cost ?? ""}
+              onChange={(e) => setCost(e.target.value)}
+              onBlur={() => save({ cost: cost === "" ? null : cost })}
+              placeholder="—"
+              className="w-32 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+            />
+          </div>
+        </td>
+      ) : (
+        <>
+          <td className="px-2 py-1.5">
+            <input
+              type="text"
+              value={packLabel}
+              onChange={(e) => setPackLabel(e.target.value)}
+              onBlur={() => save({ packLabel: packLabel || null })}
+              placeholder="kg, dz…"
+              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-white"
+            />
+          </td>
 
-      <td className="px-2 py-1.5">
-        <div className="flex items-center gap-1 justify-end">
-          <input
-            type="number" step="0.01"
-            value={packSize ?? ""}
-            onChange={(e) => setPackSize(e.target.value)}
-            onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
-            placeholder="—"
-            disabled={isDrink || row.source === "note"}
-            className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white disabled:bg-slate-50 tabular-nums"
-          />
-          {row.unit && <span className="text-xs text-muted whitespace-nowrap">{row.unit}</span>}
-        </div>
-      </td>
+          <td className="px-2 py-1.5">
+            <div className="flex items-center gap-1 justify-end">
+              <input
+                type="number" step="0.01"
+                value={packSize ?? ""}
+                onChange={(e) => setPackSize(e.target.value)}
+                onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
+                placeholder={packHint(row.unit)}
+                className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+              />
+              {row.unit && <span className="text-xs text-muted whitespace-nowrap">{row.unit}</span>}
+            </div>
+          </td>
 
-      <td className="px-2 py-1.5">
-        <div className="flex items-center gap-1">
-          <span className="text-xs text-muted">$</span>
-          <input
-            type="number" step="0.01"
-            value={packPrice ?? ""}
-            onChange={(e) => setPackPrice(e.target.value)}
-            onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
-            placeholder="—"
-            disabled={isDrink || row.source === "note"}
-            className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white disabled:bg-slate-50 tabular-nums"
-          />
-        </div>
-      </td>
+          <td className="px-2 py-1.5">
+            <div className="flex items-center gap-1">
+              <span className="text-xs text-muted">$</span>
+              <input
+                type="number" step="0.01"
+                value={packPrice ?? ""}
+                onChange={(e) => setPackPrice(e.target.value)}
+                onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
+                placeholder="—"
+                className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+              />
+            </div>
+          </td>
 
-      <td className="px-2 py-1.5 text-right text-xs tabular-nums whitespace-nowrap">
-        {packsToBuy !== null && (
-          <span className="flex items-center justify-end gap-1">
-            <span className="font-semibold">{packRoundUp ? packsToBuy : packsToBuy.toFixed(2)}</span>
-            <span className="text-muted">{packLabel}</span>
-            <button
-              onClick={() => { const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
-              className={`ml-0.5 text-[10px] px-1 py-0.5 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}
-              title={packRoundUp ? "Mode 'entier' (œufs, paquets). Clique pour passer en continu." : "Mode 'continu' (kg, L). Clique pour arrondir."}
-            >
-              {packRoundUp ? "⤴ entier" : "≈ continu"}
-            </button>
-          </span>
-        )}
-      </td>
+          <td className="px-2 py-1.5 text-right text-xs tabular-nums whitespace-nowrap">
+            {packsToBuy !== null && (
+              <span className="flex items-center justify-end gap-1">
+                <span className="font-semibold">{packRoundUp ? packsToBuy : packsToBuy.toFixed(2)}</span>
+                <span className="text-muted">{packLabel}</span>
+                <button
+                  onClick={() => { const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
+                  className={`ml-0.5 text-[10px] px-1 py-0.5 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}
+                  title={packRoundUp ? "Mode 'entier' (œufs, paquets)" : "Mode 'continu' (kg, L)"}
+                >
+                  {packRoundUp ? "⤴" : "≈"}
+                </button>
+              </span>
+            )}
+          </td>
+        </>
+      )}
 
       <td className="px-2 py-1.5 text-right text-sm tabular-nums font-semibold whitespace-nowrap">
-        {computedTotal !== null ? formatCurrency(computedTotal) : "—"}
+        {displayedTotal > 0 ? formatCurrency(displayedTotal) : "—"}
       </td>
     </tr>
   );
@@ -457,6 +496,23 @@ function GridRow({ row }: { row: EpicerieRow }) {
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat("fr-CA", { style: "currency", currency: "CAD" }).format(n);
+}
+
+function packHint(unit: string | null | undefined): string {
+  if (!unit) return "—";
+  const map: Record<string, string> = {
+    g: "ex: 1000 = 1kg",
+    ml: "ex: 1000 = 1L",
+    "unité": "ex: 12 = dz",
+    tranches: "ex: 24 = paquet",
+    biscuit: "ex: 12 = boîte",
+    sachet: "ex: 8 = boîte",
+    barre: "ex: 5 = boîte",
+    sac: "ex: 1",
+    boîte: "ex: 1",
+    rouleau: "ex: 6",
+  };
+  return map[unit] ?? `ex: # ${unit}/pack`;
 }
 
 function ViewTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
