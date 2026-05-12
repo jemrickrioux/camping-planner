@@ -103,7 +103,13 @@ function SectionRow({ row }: { row: EpicerieRow }) {
     });
   };
 
-  const displayQty = row.source === "note" ? row.fixedText : `${row.toBuy} ${row.unit ?? ""}`;
+  // Use pack purchase qty if available, else raw need
+  const hasPack = row.packsToBuy !== null && row.packLabel;
+  const purchaseQty = hasPack
+    ? `${row.packRoundUp ? row.packsToBuy : (row.packsToBuy as number).toFixed(2)} ${row.packLabel}`
+    : null;
+  const rawNeed = row.source === "note" ? row.fixedText : `${row.toBuy} ${row.unit ?? ""}`;
+
   const toggleConfirmed = () => { const v = !confirmed; setConfirmed(v); save({ confirmed: v }); };
 
   return (
@@ -121,9 +127,18 @@ function SectionRow({ row }: { row: EpicerieRow }) {
       </button>
 
       <div className="flex-1 min-w-0">
-        <div className={`font-medium ${confirmed ? "line-through opacity-60" : ""}`}>{row.name}</div>
+        <div className={`font-medium flex items-center gap-2 flex-wrap ${confirmed ? "line-through opacity-60" : ""}`}>
+          <span>{row.name}</span>
+          {purchaseQty && (
+            <span className="inline-block px-2 py-0.5 bg-teal-100 text-teal-900 rounded-full text-xs font-semibold tabular-nums">
+              🛒 {purchaseQty}
+            </span>
+          )}
+        </div>
         <div className="text-xs text-muted">
-          {row.source !== "note" && <span className="font-semibold tabular-nums">{displayQty}</span>}
+          {row.source !== "note" && rawNeed && (
+            <span className="tabular-nums">besoin : {rawNeed}</span>
+          )}
           {row.notes && <span className="ml-2">· {row.notes}</span>}
         </div>
       </div>
