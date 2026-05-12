@@ -2,6 +2,7 @@ import { db, schema } from "@/lib/db";
 import { getCurrentTrip, getParticipants } from "@/lib/trip";
 import { eq } from "drizzle-orm";
 import { StockCommunTable } from "./stock-commun-table";
+import { AddCommunForm } from "./add-commun-form";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,8 @@ export default async function StockCommunPage() {
         <Stat label="Avec owner" value={`${withOwner}/${totalItems}`} accent={withOwner === totalItems ? "ok" : "warn"} />
         <Stat label="Confirmés" value={`${confirmed}/${totalItems}`} accent={confirmed === totalItems ? "ok" : "warn"} />
       </div>
+
+      <AddCommunForm tripId={trip.id} />
 
       <StockCommunTable items={items} participants={participants} />
     </div>

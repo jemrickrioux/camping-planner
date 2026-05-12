@@ -2,6 +2,7 @@ import { db, schema } from "@/lib/db";
 import { getCurrentTrip, getParticipants, getConfirmedCount } from "@/lib/trip";
 import { eq, sql } from "drizzle-orm";
 import { EpicerieTable } from "./epicerie-table";
+import { AddGroceryForm } from "./add-grocery-form";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +129,8 @@ export default async function EpiceriePage() {
         <Stat label="Total estimé" value={formatCurrency(totalCost)} accent="ok" />
         <Stat label="Coût / pers" value={formatCurrency(costPerPax)} accent="ok" />
       </div>
+
+      <AddGroceryForm tripId={trip.id} />
 
       <EpicerieTable rows={rows} participants={participants} tripId={trip.id} />
     </div>

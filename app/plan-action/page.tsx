@@ -2,6 +2,7 @@ import { db, schema } from "@/lib/db";
 import { getCurrentTrip } from "@/lib/trip";
 import { eq } from "drizzle-orm";
 import { TodoList } from "./todo-list";
+import { AddTodoForm } from "./add-todo-form";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,8 @@ export default async function PlanActionPage() {
         <Stat label="En cours" value={inProgress} accent="primary" />
         <Stat label="Fait" value={done} accent="ok" />
       </div>
+
+      <AddTodoForm tripId={trip.id} />
 
       <TodoList items={items} />
     </div>

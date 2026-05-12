@@ -2,6 +2,7 @@ import { db, schema } from "@/lib/db";
 import { getCurrentTrip } from "@/lib/trip";
 import { eq } from "drizzle-orm";
 import { MenuByDay } from "./menu-by-day";
+import { AddMenuForm } from "./add-menu-form";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,8 @@ export default async function MenuPage() {
           Source de vérité de l'épicerie. Modifier une qté/pers ici → l'épicerie se recalcule automatiquement.
         </p>
       </div>
+      <AddMenuForm tripId={trip.id} />
+
       <MenuByDay items={items} tripId={trip.id} />
     </div>
   );

@@ -143,8 +143,140 @@ export async function updateMenuItemsByItemMeal(
   revalidatePath("/epicerie");
 }
 
-// Silence unused import warning for sql
-void sql;
+// ── ADD operations (organizer typically) ────────────────────────────────
+async function getNextPosition(
+  tableName: "perso_stock_items" | "commun_stock_items" | "menu_items" | "grocery_items" | "drinks" | "todos" | "participants",
+  tripId: number,
+): Promise<number> {
+  const result = await db.execute(
+    sql`SELECT COALESCE(MAX(position), 0) + 1 AS next FROM ${sql.raw(tableName)} WHERE trip_id = ${tripId}`,
+  );
+  type Row = { next: number | string };
+  const rows = (result as unknown as { rows?: Row[] } & Row[]).rows ?? (result as unknown as Row[]);
+  return Number(rows?.[0]?.next ?? 1);
+}
+
+export async function addPersoStockItem(tripId: number, name: string, notes?: string) {
+  const position = await getNextPosition("perso_stock_items", tripId);
+  await db.insert(schema.persoStockItems).values({ tripId, position, name, notes: notes || null });
+  revalidatePath("/stock-perso");
+}
+
+export async function deletePersoStockItem(id: number) {
+  await db.delete(schema.persoStockItems).where(eq(schema.persoStockItems.id, id));
+  revalidatePath("/stock-perso");
+}
+
+export async function addCommunStockItem(tripId: number, data: { name: string; quantity?: number; notes?: string }) {
+  const position = await getNextPosition("commun_stock_items", tripId);
+  await db.insert(schema.communStockItems).values({
+    tripId, position,
+    name: data.name,
+    quantity: data.quantity ?? 1,
+    notes: data.notes || null,
+  });
+  revalidatePath("/stock-commun");
+  revalidatePath("/");
+}
+
+export async function deleteCommunStockItem(id: number) {
+  await db.delete(schema.communStockItems).where(eq(schema.communStockItems.id, id));
+  revalidatePath("/stock-commun");
+}
+
+export async function addMenuItem(tripId: number, data: {
+  day: string; meal: string; section: string; item: string; unit: string; qtyPerPerson: string; notes?: string;
+}) {
+  const position = await getNextPosition("menu_items", tripId);
+  await db.insert(schema.menuItems).values({
+    tripId, position,
+    day: data.day, meal: data.meal, section: data.section, item: data.item, unit: data.unit,
+    qtyPerPerson: data.qtyPerPerson, notes: data.notes || null,
+  });
+  revalidatePath("/menu");
+  revalidatePath("/epicerie");
+}
+
+export async function addGroceryItem(tripId: number, data: {
+  section: string; name: string; unit?: string;
+  source: "menu" | "fixed" | "note";
+  matchItem?: string; fixedQtyPerPerson?: string; fixedText?: string;
+}) {
+  const position = await getNextPosition("grocery_items", tripId);
+  await db.insert(schema.groceryItems).values({
+    tripId, position,
+    section: data.section, name: data.name, unit: data.unit || null,
+    source: data.source,
+    matchItem: data.matchItem || null,
+    fixedQtyPerPerson: data.fixedQtyPerPerson || null,
+    fixedText: data.fixedText || null,
+  });
+  revalidatePath("/epicerie");
+}
+
+export async function deleteGroceryItem(id: number) {
+  await db.delete(schema.groceryItems).where(eq(schema.groceryItems.id, id));
+  revalidatePath("/epicerie");
+}
+
+export async function addDrink(tripId: number, data: {
+  category: string; item: string; format?: string; quantity?: number; notes?: string;
+}) {
+  const position = await getNextPosition("drinks", tripId);
+  await db.insert(schema.drinks).values({
+    tripId, position,
+    category: data.category, item: data.item,
+    format: data.format || null,
+    quantity: data.quantity ?? 1,
+    notes: data.notes || null,
+  });
+  revalidatePath("/boissons");
+  revalidatePath("/epicerie");
+}
+
+export async function deleteDrink(id: number) {
+  await db.delete(schema.drinks).where(eq(schema.drinks.id, id));
+  revalidatePath("/boissons");
+  revalidatePath("/epicerie");
+}
+
+export async function addTodo(tripId: number, data: {
+  action: string; responsible?: string; deadline?: string; notes?: string;
+}) {
+  const position = await getNextPosition("todos", tripId);
+  await db.insert(schema.todos).values({
+    tripId, position,
+    action: data.action,
+    responsible: data.responsible || null,
+    deadline: data.deadline || null,
+    notes: data.notes || null,
+  });
+  revalidatePath("/plan-action");
+  revalidatePath("/");
+}
+
+export async function deleteTodo(id: number) {
+  await db.delete(schema.todos).where(eq(schema.todos.id, id));
+  revalidatePath("/plan-action");
+}
+
+export async function addParticipant(tripId: number, name: string) {
+  const position = await getNextPosition("participants", tripId);
+  await db.insert(schema.participants).values({
+    tripId, position, name,
+    confirmed: "?",
+    role: "participant",
+  });
+  revalidatePath("/participants");
+  revalidatePath("/");
+}
+
+export async function deleteParticipant(id: number) {
+  await db.delete(schema.participants).where(eq(schema.participants.id, id));
+  revalidatePath("/participants");
+  revalidatePath("/");
+}
+
 
 // ── Drinks ───────────────────────────────────────────────────────────────
 export async function updateDrink(id: number, data: {

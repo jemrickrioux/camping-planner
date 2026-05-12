@@ -2,6 +2,7 @@ import { db, schema } from "@/lib/db";
 import { getCurrentTrip, getParticipants, getConfirmedCount } from "@/lib/trip";
 import { eq } from "drizzle-orm";
 import { BoissonsTable } from "./boissons-table";
+import { AddDrinkForm } from "./add-drink-form";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,8 @@ export default async function BoissonsPage() {
         <Stat label="Total estimé" value={formatCurrency(totalCost)} accent="ok" />
         <Stat label="Pool / pax" value={formatCurrency(costPerPax)} accent="ok" />
       </div>
+
+      <AddDrinkForm tripId={trip.id} />
 
       <BoissonsTable drinks={drinks} participants={participants} />
     </div>
