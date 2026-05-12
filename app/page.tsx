@@ -1,5 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { getCurrentTrip, getConfirmedCount, getParticipants } from "@/lib/trip";
+import { isOrganizerSession } from "@/lib/auth";
 import { eq, sql } from "drizzle-orm";
 import Link from "next/link";
 import { Countdown } from "@/components/countdown";
@@ -17,6 +18,7 @@ export default async function DashboardPage() {
   const participants = await getParticipants();
   const totalParticipants = participants.length;
   const allConfirmed = confirmedCount === totalParticipants;
+  const isOrganizer = await isOrganizerSession();
 
   const [communSansOwner] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -100,10 +102,14 @@ export default async function DashboardPage() {
         <h2 className="text-base font-semibold mb-3 text-muted">Actions rapides</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <ActionCard href="/lifts" emoji="🚗" label="Lifts" desc="Aller + retour" bg="from-sky-50 to-cyan-50" />
-          <ActionCard href="/canots" emoji="🛶" label="Canots" desc="Location + placement" bg="from-teal-50 to-cyan-50" />
-          <ActionCard href="/stock-commun" emoji="📦" label="Stock commun" desc={`${communSansOwner.count ?? 0} sans owner`} bg="from-rose-50 to-pink-50" badge={communSansOwner.count ?? 0} />
-          <ActionCard href="/epicerie" emoji="🛒" label="Épicerie" desc="Groupes d'achat" bg="from-emerald-50 to-teal-50" />
-          <ActionCard href="/boissons" emoji="🍻" label="Boissons" desc="Pool partagé" bg="from-yellow-50 to-amber-50" />
+          {isOrganizer && (
+            <>
+              <ActionCard href="/canots" emoji="🛶" label="Canots" desc="Location + placement" bg="from-teal-50 to-cyan-50" />
+              <ActionCard href="/stock-commun" emoji="📦" label="Stock commun" desc={`${communSansOwner.count ?? 0} sans owner`} bg="from-rose-50 to-pink-50" badge={communSansOwner.count ?? 0} />
+              <ActionCard href="/epicerie" emoji="🛒" label="Épicerie" desc="Groupes d'achat" bg="from-emerald-50 to-teal-50" />
+              <ActionCard href="/boissons" emoji="🍻" label="Boissons" desc="Pool partagé" bg="from-yellow-50 to-amber-50" />
+            </>
+          )}
         </div>
       </section>
 
@@ -122,7 +128,7 @@ export default async function DashboardPage() {
       {/* INFO PRATIQUE — editable for organizer */}
       <TripInfoCards trip={trip} />
 
-      {(todosOpen.count ?? 0) > 0 && (
+      {isOrganizer && (todosOpen.count ?? 0) > 0 && (
         <section className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
           <div className="flex items-center justify-between gap-3">
             <div>

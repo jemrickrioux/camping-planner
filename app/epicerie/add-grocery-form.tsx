@@ -8,8 +8,8 @@ import { useWhoAmI } from "@/components/who-am-i";
 const SECTIONS = ["Boucherie", "Œufs/Laitages", "Fruits & Légumes", "Épicerie sèche", "Condiments", "Boissons", "Dépanneur"];
 
 export function AddGroceryForm({ tripId }: { tripId: number }) {
-  const { isOrganizer } = useWhoAmI();
-  if (!isOrganizer) return null;
+  const { canManageGrocery } = useWhoAmI();
+  if (!canManageGrocery) return null;
   return (
     <AddButton label="Ajouter un item d'épicerie">
       {(close) => <Form tripId={tripId} close={close} />}

@@ -57,6 +57,7 @@ export const participants = pgTable("participants", {
   liftReturnFrom: text("lift_return_from"),
   liftReturnTime: text("lift_return_time"),
   liftReturnDriverId: integer("lift_return_driver_id"),
+  canManageGrocery: boolean("can_manage_grocery").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 

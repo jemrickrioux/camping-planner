@@ -3,6 +3,70 @@
 import { db, schema } from "@/lib/db";
 import { eq, and, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { cookies } from "next/headers";
+import {
+  COOKIE_NAMES,
+  assertCanManageGrocery,
+  assertOrganizer,
+  assertSelfOrOrganizer,
+  canManageGrocery,
+  getCurrentParticipantId,
+  verifyPin,
+} from "@/lib/auth";
+
+// ── Session management ───────────────────────────────────────────────────
+export async function selectParticipant(participantId: number, pin?: string) {
+  const [p] = await db
+    .select()
+    .from(schema.participants)
+    .where(eq(schema.participants.id, participantId))
+    .limit(1);
+  if (!p) return { ok: false as const, error: "Participant inconnu." };
+
+  const cookieStore = await cookies();
+
+  if (p.role === "organizer") {
+    if (!pin || !verifyPin(pin)) {
+      return { ok: false as const, error: "PIN incorrect." };
+    }
+    cookieStore.set(COOKIE_NAMES.organizer, pin, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 30,
+      secure: process.env.NODE_ENV === "production",
+    });
+  } else {
+    cookieStore.delete(COOKIE_NAMES.organizer);
+  }
+
+  cookieStore.set(COOKIE_NAMES.participant, String(participantId), {
+    httpOnly: false,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+    secure: process.env.NODE_ENV === "production",
+  });
+
+  return { ok: true as const };
+}
+
+export async function clearSession() {
+  const cookieStore = await cookies();
+  cookieStore.delete(COOKIE_NAMES.organizer);
+  cookieStore.delete(COOKIE_NAMES.participant);
+  return { ok: true as const };
+}
+
+export async function setCanManageGrocery(participantId: number, canManage: boolean) {
+  await assertOrganizer();
+  await db
+    .update(schema.participants)
+    .set({ canManageGrocery: canManage })
+    .where(eq(schema.participants.id, participantId));
+  revalidatePath("/participants");
+  revalidatePath("/epicerie");
+}
 
 // ── Trip details (organizer only) ────────────────────────────────────────
 export async function updateTrip(id: number, data: Partial<{
@@ -20,6 +84,7 @@ export async function updateTrip(id: number, data: Partial<{
   contactAddress: string;
   notes: string;
 }>) {
+  await assertOrganizer();
   await db.update(schema.trips).set(data).where(eq(schema.trips.id, id));
   revalidatePath("/");
 }
@@ -32,6 +97,7 @@ export async function updateParticipant(id: number, data: {
   allergies?: string;
   notes?: string;
 }) {
+  await assertSelfOrOrganizer(id);
   await db.update(schema.participants).set(data).where(eq(schema.participants.id, id));
   revalidatePath("/");
   revalidatePath("/participants");
@@ -50,6 +116,7 @@ export async function updateLift(id: number, data: {
   liftReturnTime?: string | null;
   liftReturnDriverId?: number | null;
 }) {
+  await assertSelfOrOrganizer(id);
   await db.update(schema.participants).set(data).where(eq(schema.participants.id, id));
   revalidatePath("/lifts");
   revalidatePath("/");
@@ -60,6 +127,7 @@ export async function updateArrivalDeparture(id: number, data: {
   arrivalMeal?: string | null;
   departureMeal?: string | null;
 }) {
+  await assertSelfOrOrganizer(id);
   await db.update(schema.participants).set(data).where(eq(schema.participants.id, id));
   revalidatePath("/participants");
   revalidatePath("/");
@@ -67,6 +135,7 @@ export async function updateArrivalDeparture(id: number, data: {
 
 // ── Stock perso ──────────────────────────────────────────────────────────
 export async function togglePersoStockCheck(participantId: number, persoStockItemId: number, hasIt: boolean) {
+  await assertSelfOrOrganizer(participantId);
   await db
     .insert(schema.persoStockChecks)
     .values({ participantId, persoStockItemId, hasIt })
@@ -94,12 +163,14 @@ export async function updateMenuItem(id: number, data: {
   qtyPerPerson?: string;
   notes?: string;
 }) {
+  await assertOrganizer();
   await db.update(schema.menuItems).set(data).where(eq(schema.menuItems.id, id));
   revalidatePath("/menu");
   revalidatePath("/epicerie");
 }
 
 export async function deleteMenuItem(id: number) {
+  await assertOrganizer();
   await db.delete(schema.menuItems).where(eq(schema.menuItems.id, id));
   revalidatePath("/menu");
   revalidatePath("/epicerie");
@@ -116,6 +187,7 @@ export async function updateGroceryItem(id: number, data: {
   packPrice?: string | null;
   packRoundUp?: boolean;
 }) {
+  await assertCanManageGrocery();
   await db.update(schema.groceryItems).set(data).where(eq(schema.groceryItems.id, id));
   revalidatePath("/epicerie");
   revalidatePath("/");
@@ -126,6 +198,7 @@ export async function bulkAssignGrocerySection(
   section: string,
   buyerId: number | null,
 ) {
+  await assertCanManageGrocery();
   await db
     .update(schema.groceryItems)
     .set({ buyerId })
@@ -140,6 +213,7 @@ export async function updateMenuItemsByItem(
   item: string,
   qtyPerPerson: string,
 ) {
+  await assertOrganizer();
   await db
     .update(schema.menuItems)
     .set({ qtyPerPerson })
@@ -154,6 +228,7 @@ export async function updateMenuItemsByItemMeal(
   meal: string,
   qtyPerPerson: string,
 ) {
+  await assertOrganizer();
   await db
     .update(schema.menuItems)
     .set({ qtyPerPerson })
@@ -212,6 +287,7 @@ export async function deleteCommunStockItem(id: number) {
 export async function addMenuItem(tripId: number, data: {
   day: string; meal: string; section: string; item: string; unit: string; qtyPerPerson: string; notes?: string;
 }) {
+  await assertOrganizer();
   const position = await getNextPosition("menu_items", tripId);
   await db.insert(schema.menuItems).values({
     tripId, position,
@@ -227,6 +303,7 @@ export async function addGroceryItem(tripId: number, data: {
   source: "menu" | "fixed" | "note";
   matchItem?: string; fixedQtyPerPerson?: string; fixedText?: string;
 }) {
+  await assertCanManageGrocery();
   const position = await getNextPosition("grocery_items", tripId);
   await db.insert(schema.groceryItems).values({
     tripId, position,
@@ -240,6 +317,7 @@ export async function addGroceryItem(tripId: number, data: {
 }
 
 export async function deleteGroceryItem(id: number) {
+  await assertCanManageGrocery();
   await db.delete(schema.groceryItems).where(eq(schema.groceryItems.id, id));
   revalidatePath("/epicerie");
 }
@@ -247,6 +325,7 @@ export async function deleteGroceryItem(id: number) {
 export async function addDrink(tripId: number, data: {
   category: string; item: string; format?: string; quantity?: number; notes?: string;
 }) {
+  await assertCanManageGrocery();
   const position = await getNextPosition("drinks", tripId);
   await db.insert(schema.drinks).values({
     tripId, position,
@@ -260,6 +339,7 @@ export async function addDrink(tripId: number, data: {
 }
 
 export async function deleteDrink(id: number) {
+  await assertCanManageGrocery();
   await db.delete(schema.drinks).where(eq(schema.drinks.id, id));
   revalidatePath("/boissons");
   revalidatePath("/epicerie");
@@ -286,6 +366,7 @@ export async function deleteTodo(id: number) {
 }
 
 export async function addParticipant(tripId: number, name: string) {
+  await assertOrganizer();
   const position = await getNextPosition("participants", tripId);
   await db.insert(schema.participants).values({
     tripId, position, name,
@@ -297,6 +378,7 @@ export async function addParticipant(tripId: number, name: string) {
 }
 
 export async function deleteParticipant(id: number) {
+  await assertOrganizer();
   await db.delete(schema.participants).where(eq(schema.participants.id, id));
   revalidatePath("/participants");
   revalidatePath("/");
@@ -371,6 +453,8 @@ export async function copyOutboundToReturn(canoeId: number) {
 
 
 // ── Drinks ───────────────────────────────────────────────────────────────
+// Boissons follow a self-managed model: any participant can claim a drink and
+// update their own. Grocery managers (and the organizer) can edit any drink.
 export async function updateDrink(id: number, data: {
   quantity?: number;
   ownerId?: number | null;
@@ -378,6 +462,17 @@ export async function updateDrink(id: number, data: {
   confirmed?: boolean;
   notes?: string;
 }) {
+  if (!(await canManageGrocery())) {
+    const [drink] = await db.select().from(schema.drinks).where(eq(schema.drinks.id, id)).limit(1);
+    if (!drink) throw new Error("Boisson introuvable.");
+    const me = await getCurrentParticipantId();
+    const isClaimingForSelf = drink.ownerId === null && data.ownerId === me;
+    const isReleasingOwn = drink.ownerId === me && data.ownerId === null;
+    const isOwnDrink = drink.ownerId === me && data.ownerId === undefined;
+    if (!(isClaimingForSelf || isReleasingOwn || isOwnDrink)) {
+      throw new Error("Réservé au propriétaire ou à l'équipe épicerie.");
+    }
+  }
   await db.update(schema.drinks).set(data).where(eq(schema.drinks.id, id));
   revalidatePath("/boissons");
   revalidatePath("/epicerie");

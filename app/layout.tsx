@@ -3,6 +3,7 @@ import "./globals.css";
 import { Nav } from "@/components/nav";
 import { WhoAmIProvider } from "@/components/who-am-i";
 import { getCurrentTrip, getParticipants } from "@/lib/trip";
+import { getCurrentParticipantId, isOrganizerSession } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "🛶 Canot Camping — Poisson Blanc",
@@ -18,11 +19,17 @@ export default async function RootLayout({
 }>) {
   const trip = await getCurrentTrip();
   const participants = await getParticipants();
+  const currentParticipantId = await getCurrentParticipantId();
+  const isOrganizer = await isOrganizerSession();
 
   return (
     <html lang="fr" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
-        <WhoAmIProvider participants={participants}>
+        <WhoAmIProvider
+          participants={participants}
+          currentParticipantId={currentParticipantId}
+          isOrganizer={isOrganizer}
+        >
           <Nav tripName={trip.name} />
           <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6">{children}</main>
           <footer className="border-t border-border py-4 text-center text-xs text-muted">

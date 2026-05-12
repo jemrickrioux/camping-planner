@@ -8,8 +8,8 @@ import { useWhoAmI } from "@/components/who-am-i";
 const CATEGORIES = ["Bières", "Spiritueux", "Vin", "Mixers", "Apéro"];
 
 export function AddDrinkForm({ tripId }: { tripId: number }) {
-  const { isOrganizer } = useWhoAmI();
-  if (!isOrganizer) return null;
+  const { canManageGrocery } = useWhoAmI();
+  if (!canManageGrocery) return null;
   return (
     <AddButton label="Ajouter une boisson au pool">
       {(close) => <Form tripId={tripId} close={close} />}

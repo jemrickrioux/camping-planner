@@ -3,24 +3,26 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { WhoAmIBadge } from "./who-am-i";
+import { WhoAmIBadge, useWhoAmI } from "./who-am-i";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Sommaire", emoji: "🏕️" },
-  { href: "/participants", label: "Participants", emoji: "👥" },
-  { href: "/lifts", label: "Lifts", emoji: "🚗" },
-  { href: "/canots", label: "Canots", emoji: "🛶" },
-  { href: "/stock-perso", label: "Stock perso", emoji: "🎒" },
-  { href: "/stock-commun", label: "Stock commun", emoji: "📦" },
-  { href: "/menu", label: "Menu", emoji: "🍽️" },
-  { href: "/epicerie", label: "Épicerie", emoji: "🛒" },
-  { href: "/boissons", label: "Boissons", emoji: "🍻" },
-  { href: "/plan-action", label: "Plan", emoji: "✅" },
+  { href: "/", label: "Sommaire", emoji: "🏕️", forAll: true },
+  { href: "/participants", label: "Participants", emoji: "👥", forAll: true },
+  { href: "/lifts", label: "Lifts", emoji: "🚗", forAll: true },
+  { href: "/canots", label: "Canots", emoji: "🛶", forAll: false },
+  { href: "/stock-perso", label: "Stock perso", emoji: "🎒", forAll: false },
+  { href: "/stock-commun", label: "Stock commun", emoji: "📦", forAll: false },
+  { href: "/menu", label: "Menu", emoji: "🍽️", forAll: false },
+  { href: "/epicerie", label: "Épicerie", emoji: "🛒", forAll: false },
+  { href: "/boissons", label: "Boissons", emoji: "🍻", forAll: false },
+  { href: "/plan-action", label: "Plan", emoji: "✅", forAll: false },
 ];
 
 export function Nav({ tripName }: { tripName: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const { isOrganizer } = useWhoAmI();
+  const visibleItems = isOrganizer ? NAV_ITEMS : NAV_ITEMS.filter((i) => i.forAll);
 
   // Close drawer when route changes
   useEffect(() => {
@@ -33,7 +35,7 @@ export function Nav({ tripName }: { tripName: string }) {
     return () => { document.body.style.overflow = ""; };
   }, [open]);
 
-  const current = NAV_ITEMS.find((i) => i.href === pathname) ?? NAV_ITEMS[0];
+  const current = visibleItems.find((i) => i.href === pathname) ?? visibleItems[0];
 
   return (
     <header className="sticky top-0 z-30 bg-card border-b border-border shadow-sm">
@@ -62,7 +64,7 @@ export function Nav({ tripName }: { tripName: string }) {
       {/* Desktop horizontal tabs */}
       <nav className="hidden md:block max-w-6xl mx-auto px-2 overflow-x-auto scrollbar-thin">
         <ul className="flex gap-1 min-w-max">
-          {NAV_ITEMS.map((item) => {
+          {visibleItems.map((item) => {
             const active = pathname === item.href;
             return (
               <li key={item.href}>
@@ -98,7 +100,7 @@ export function Nav({ tripName }: { tripName: string }) {
               <button onClick={() => setOpen(false)} className="text-2xl leading-none text-muted hover:text-foreground" aria-label="Fermer">✕</button>
             </div>
             <ul className="flex-1 overflow-y-auto p-2 space-y-1">
-              {NAV_ITEMS.map((item) => {
+              {visibleItems.map((item) => {
                 const active = pathname === item.href;
                 return (
                   <li key={item.href}>

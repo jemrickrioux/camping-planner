@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { Participant } from "@/db/schema";
-import { updateParticipant, updateArrivalDeparture } from "@/app/actions";
+import { updateParticipant, updateArrivalDeparture, setCanManageGrocery } from "@/app/actions";
 import { useWhoAmI, Avatar } from "@/components/who-am-i";
 import { formatPhone } from "@/lib/format";
 import type { MealSlot } from "@/lib/meals";
@@ -26,11 +26,13 @@ export function ParticipantsTable({ participants, mealSlots }: { participants: P
 }
 
 function Card({ participant, canEdit, isMe, mealSlots }: { participant: Participant; canEdit: boolean; isMe: boolean; mealSlots: MealSlot[] }) {
+  const { isOrganizer } = useWhoAmI();
   const [confirmed, setConfirmed] = useState(participant.confirmed);
   const [phone, setPhone] = useState(formatPhone(participant.phone));
   const [allergies, setAllergies] = useState(participant.allergies ?? "");
   const [arrival, setArrival] = useState(participant.arrivalMeal ?? "");
   const [departure, setDeparture] = useState(participant.departureMeal ?? "");
+  const [canGrocery, setCanGrocery] = useState(participant.canManageGrocery);
   const [, startTransition] = useTransition();
 
   const save = (data: Partial<Participant>) => {
@@ -39,6 +41,12 @@ function Card({ participant, canEdit, isMe, mealSlots }: { participant: Particip
 
   const saveAD = (data: { arrivalMeal?: string | null; departureMeal?: string | null }) => {
     startTransition(() => updateArrivalDeparture(participant.id, data));
+  };
+
+  const toggleGrocery = () => {
+    const v = !canGrocery;
+    setCanGrocery(v);
+    startTransition(() => setCanManageGrocery(participant.id, v));
   };
 
   const handlePhoneChange = (raw: string) => {
@@ -120,6 +128,23 @@ function Card({ participant, canEdit, isMe, mealSlots }: { participant: Particip
           editable={canEdit}
         />
       </div>
+
+      {isOrganizer ? (
+        <label className="flex items-center gap-2 text-sm border-t border-border pt-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={canGrocery}
+            onChange={toggleGrocery}
+            className="w-4 h-4 accent-emerald-600"
+          />
+          <span>🛒 Équipe épicerie</span>
+          <span className="text-xs text-muted">— peut modifier la liste</span>
+        </label>
+      ) : participant.canManageGrocery ? (
+        <div className="flex items-center gap-2 text-sm border-t border-border pt-2 text-emerald-700">
+          🛒 <span>Équipe épicerie</span>
+        </div>
+      ) : null}
     </div>
   );
 }

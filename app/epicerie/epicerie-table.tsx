@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import type { Participant } from "@/db/schema";
 import type { EpicerieRow } from "./page";
 import { updateGroceryItem, updateDrink } from "@/app/actions";
+import { useWhoAmI } from "@/components/who-am-i";
 
 const SECTION_META: Record<string, { color: string; emoji: string }> = {
   "Boucherie": { color: "from-rose-50 to-rose-100 border-rose-200", emoji: "🥩" },
@@ -17,6 +18,7 @@ const SECTION_META: Record<string, { color: string; emoji: string }> = {
 };
 
 export function EpicerieTable({ rows }: { rows: EpicerieRow[]; participants: Participant[]; tripId: number }) {
+  const { canManageGrocery } = useWhoAmI();
   const [view, setView] = useState<"sections" | "grid">("grid");
   const [filter, setFilter] = useState<"all" | "todo" | "done">("all");
 
@@ -59,8 +61,14 @@ export function EpicerieTable({ rows }: { rows: EpicerieRow[]; participants: Par
         💡 Une seule grosse liste. Ceux avec les glacières achètent tout, on calcule au bout. Coche ✓ quand un item est acheté.
       </div>
 
+      {!canManageGrocery && (
+        <div className="bg-slate-50 border border-border rounded-xl p-3 text-sm text-muted">
+          🔒 Tu peux consulter l'épicerie. Seule l'équipe épicerie (et l'organisateur) peuvent modifier les items et les prix.
+        </div>
+      )}
+
       {view === "grid" ? (
-        <PriceGrid rows={filtered} />
+        <PriceGrid rows={filtered} canEdit={canManageGrocery} />
       ) : (
         <div className="space-y-3">
           {sections.map((section) => {
@@ -77,7 +85,7 @@ export function EpicerieTable({ rows }: { rows: EpicerieRow[]; participants: Par
                 <ul className="divide-y divide-white/60 bg-white/40">
                   {sectionRows.map((row) => (
                     <li key={row.id}>
-                      <SectionRow row={row} />
+                      <SectionRow row={row} canEdit={canManageGrocery} />
                     </li>
                   ))}
                 </ul>
@@ -90,7 +98,7 @@ export function EpicerieTable({ rows }: { rows: EpicerieRow[]; participants: Par
   );
 }
 
-function SectionRow({ row }: { row: EpicerieRow }) {
+function SectionRow({ row, canEdit }: { row: EpicerieRow; canEdit: boolean }) {
   const [confirmed, setConfirmed] = useState(row.confirmed ?? false);
   const [, startTransition] = useTransition();
   const isDrink = row.source === "drink";
@@ -110,18 +118,24 @@ function SectionRow({ row }: { row: EpicerieRow }) {
     : null;
   const rawNeed = row.source === "note" ? row.fixedText : `${row.toBuy} ${row.unit ?? ""}`;
 
-  const toggleConfirmed = () => { const v = !confirmed; setConfirmed(v); save({ confirmed: v }); };
+  const toggleConfirmed = () => {
+    if (!canEdit) return;
+    const v = !confirmed;
+    setConfirmed(v);
+    save({ confirmed: v });
+  };
 
   return (
     <div className={`px-4 py-3 flex items-center gap-3 ${confirmed ? "bg-emerald-50/60" : ""}`}>
       <button
         onClick={toggleConfirmed}
+        disabled={!canEdit}
         className={`w-9 h-9 rounded-full border-2 flex items-center justify-center shrink-0 transition ${
           confirmed
             ? "bg-emerald-500 border-emerald-600 text-white"
             : "bg-white border-slate-300 hover:border-emerald-400"
-        }`}
-        title={confirmed ? "Marquer non acheté" : "Marquer acheté"}
+        } ${!canEdit ? "cursor-not-allowed opacity-70" : ""}`}
+        title={canEdit ? (confirmed ? "Marquer non acheté" : "Marquer acheté") : "Réservé à l'équipe épicerie"}
       >
         {confirmed ? "✓" : ""}
       </button>
@@ -152,7 +166,7 @@ function SectionRow({ row }: { row: EpicerieRow }) {
   );
 }
 
-function PriceGrid({ rows }: { rows: EpicerieRow[] }) {
+function PriceGrid({ rows, canEdit }: { rows: EpicerieRow[]; canEdit: boolean }) {
   const sectionsInOrder = Array.from(new Set(rows.map((r) => r.section)));
   const grandTotal = rows.reduce((s, r) => s + r.effectiveCost, 0);
 
@@ -175,7 +189,7 @@ function PriceGrid({ rows }: { rows: EpicerieRow[] }) {
                 {sectionTotal > 0 && <span className="text-right tabular-nums">{formatCurrency(sectionTotal)}</span>}
               </div>
               {sectionRows.map((row) => (
-                <GridCard key={row.id} row={row} />
+                <GridCard key={row.id} row={row} canEdit={canEdit} />
               ))}
             </div>
           );
@@ -227,7 +241,7 @@ function PriceGrid({ rows }: { rows: EpicerieRow[] }) {
                     </td>
                   </tr>
                   {sectionRows.map((row) => (
-                    <GridRow key={row.id} row={row} />
+                    <GridRow key={row.id} row={row} canEdit={canEdit} />
                   ))}
                 </>
               );
@@ -243,7 +257,7 @@ function PriceGrid({ rows }: { rows: EpicerieRow[] }) {
   );
 }
 
-function GridCard({ row }: { row: EpicerieRow }) {
+function GridCard({ row, canEdit }: { row: EpicerieRow; canEdit: boolean }) {
   const [packLabel, setPackLabel] = useState(row.packLabel ?? "");
   const [packSize, setPackSize] = useState(row.packSize ?? "");
   const [packPrice, setPackPrice] = useState(row.packPrice ?? "");
@@ -257,6 +271,7 @@ function GridCard({ row }: { row: EpicerieRow }) {
   const simpleMode = isDrink || row.source === "note";
 
   const save = (data: Parameters<typeof updateGroceryItem>[1]) => {
+    if (!canEdit) return;
     startTransition(() => {
       if (isDrink) {
         // drinks: only support cost + confirmed
@@ -285,10 +300,11 @@ function GridCard({ row }: { row: EpicerieRow }) {
     <div className={`px-3 py-3 border-b border-border space-y-2 ${confirmed ? "bg-emerald-50/40" : ""}`}>
       <div className="flex items-center gap-3">
         <button
-          onClick={() => { const v = !confirmed; setConfirmed(v); save({ confirmed: v }); }}
+          onClick={() => { if (!canEdit) return; const v = !confirmed; setConfirmed(v); save({ confirmed: v }); }}
+          disabled={!canEdit}
           className={`w-7 h-7 rounded-md border-2 inline-flex items-center justify-center shrink-0 transition ${
             confirmed ? "bg-emerald-500 border-emerald-600 text-white" : "bg-white border-slate-300"
-          }`}
+          } ${!canEdit ? "cursor-not-allowed opacity-70" : ""}`}
         >
           {confirmed && <span className="text-sm">✓</span>}
         </button>
@@ -311,71 +327,73 @@ function GridCard({ row }: { row: EpicerieRow }) {
         )}
       </div>
 
-      {simpleMode ? (
-        <label className="flex items-center gap-2">
-          <span className="text-xs text-muted shrink-0">Total $</span>
-          <input
-            type="number" step="0.01" value={cost ?? ""}
-            onChange={(e) => setCost(e.target.value)}
-            onBlur={() => save({ cost: cost === "" ? null : cost })}
-            placeholder="—"
-            className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
-          />
-        </label>
-      ) : (
-        <>
-          <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
-            <label className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted">Pack</span>
-              <input
-                type="text" value={packLabel}
-                onChange={(e) => setPackLabel(e.target.value)}
-                onBlur={() => save({ packLabel: packLabel || null })}
-                placeholder="kg, dz…"
-                className="px-2 py-1.5 text-sm border border-border rounded-md bg-white"
-              />
-            </label>
-            <label className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted">Taille ({row.unit ?? "—"})</span>
-              <input
-                type="number" step="0.01" value={packSize ?? ""}
-                onChange={(e) => setPackSize(e.target.value)}
-                onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
-                placeholder={packHint(row.unit)}
-                className="px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums w-24"
-              />
-            </label>
-            <label className="flex flex-col gap-0.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted">Prix / pack</span>
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-muted">$</span>
+      <fieldset disabled={!canEdit} className={`space-y-2 ${!canEdit ? "opacity-60" : ""}`}>
+        {simpleMode ? (
+          <label className="flex items-center gap-2">
+            <span className="text-xs text-muted shrink-0">Total $</span>
+            <input
+              type="number" step="0.01" value={cost ?? ""}
+              onChange={(e) => setCost(e.target.value)}
+              onBlur={() => save({ cost: cost === "" ? null : cost })}
+              placeholder="—"
+              className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums disabled:bg-slate-50"
+            />
+          </label>
+        ) : (
+          <>
+            <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-muted">Pack</span>
                 <input
-                  type="number" step="0.01" value={packPrice ?? ""}
-                  onChange={(e) => setPackPrice(e.target.value)}
-                  onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
-                  placeholder="—"
-                  className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+                  type="text" value={packLabel}
+                  onChange={(e) => setPackLabel(e.target.value)}
+                  onBlur={() => save({ packLabel: packLabel || null })}
+                  placeholder="kg, dz…"
+                  className="px-2 py-1.5 text-sm border border-border rounded-md bg-white disabled:bg-slate-50"
                 />
-              </div>
-            </label>
-          </div>
-          {sizeNum > 0 && (
-            <div className="flex justify-end">
-              <button
-                onClick={() => { const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
-                className={`text-xs px-2 py-1 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}
-              >
-                {packRoundUp ? "⤴ Arrondir aux paquets entiers" : "≈ Continu (kg, L)"}
-              </button>
+              </label>
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-muted">Taille ({row.unit ?? "—"})</span>
+                <input
+                  type="number" step="0.01" value={packSize ?? ""}
+                  onChange={(e) => setPackSize(e.target.value)}
+                  onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
+                  placeholder={packHint(row.unit)}
+                  className="px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums w-24 disabled:bg-slate-50"
+                />
+              </label>
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-muted">Prix / pack</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted">$</span>
+                  <input
+                    type="number" step="0.01" value={packPrice ?? ""}
+                    onChange={(e) => setPackPrice(e.target.value)}
+                    onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
+                    placeholder="—"
+                    className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums disabled:bg-slate-50"
+                  />
+                </div>
+              </label>
             </div>
-          )}
-        </>
-      )}
+            {sizeNum > 0 && (
+              <div className="flex justify-end">
+                <button
+                  onClick={() => { const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
+                  className={`text-xs px-2 py-1 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}
+                >
+                  {packRoundUp ? "⤴ Arrondir aux paquets entiers" : "≈ Continu (kg, L)"}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </fieldset>
     </div>
   );
 }
 
-function GridRow({ row }: { row: EpicerieRow }) {
+function GridRow({ row, canEdit }: { row: EpicerieRow; canEdit: boolean }) {
   const [packLabel, setPackLabel] = useState(row.packLabel ?? "");
   const [packSize, setPackSize] = useState(row.packSize ?? "");
   const [packPrice, setPackPrice] = useState(row.packPrice ?? "");
@@ -388,6 +406,7 @@ function GridRow({ row }: { row: EpicerieRow }) {
   const simpleMode = isDrink || row.source === "note";
 
   const save = (data: Parameters<typeof updateGroceryItem>[1]) => {
+    if (!canEdit) return;
     startTransition(() => {
       if (isDrink) updateDrink(realId, { cost: data.cost ?? undefined, confirmed: data.confirmed });
       else updateGroceryItem(realId, data);
@@ -414,10 +433,11 @@ function GridRow({ row }: { row: EpicerieRow }) {
     <tr className={`border-b border-border ${confirmed ? "bg-emerald-50/40" : ""}`}>
       <td className="px-2 py-1.5 text-center">
         <button
-          onClick={() => { const v = !confirmed; setConfirmed(v); save({ confirmed: v }); }}
+          onClick={() => { if (!canEdit) return; const v = !confirmed; setConfirmed(v); save({ confirmed: v }); }}
+          disabled={!canEdit}
           className={`w-6 h-6 rounded-md border-2 inline-flex items-center justify-center transition ${
             confirmed ? "bg-emerald-500 border-emerald-600 text-white" : "bg-white border-slate-300 hover:border-emerald-400"
-          }`}
+          } ${!canEdit ? "cursor-not-allowed opacity-60" : ""}`}
         >
           {confirmed && <span className="text-xs">✓</span>}
         </button>
@@ -438,8 +458,9 @@ function GridRow({ row }: { row: EpicerieRow }) {
               value={cost ?? ""}
               onChange={(e) => setCost(e.target.value)}
               onBlur={() => save({ cost: cost === "" ? null : cost })}
+              disabled={!canEdit}
               placeholder="—"
-              className="w-32 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+              className="w-32 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums disabled:bg-slate-50 disabled:opacity-60"
             />
           </div>
         </td>
@@ -451,8 +472,9 @@ function GridRow({ row }: { row: EpicerieRow }) {
               value={packLabel}
               onChange={(e) => setPackLabel(e.target.value)}
               onBlur={() => save({ packLabel: packLabel || null })}
+              disabled={!canEdit}
               placeholder="kg, dz…"
-              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-white"
+              className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-white disabled:bg-slate-50 disabled:opacity-60"
             />
           </td>
 
@@ -463,8 +485,9 @@ function GridRow({ row }: { row: EpicerieRow }) {
                 value={packSize ?? ""}
                 onChange={(e) => setPackSize(e.target.value)}
                 onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
+                disabled={!canEdit}
                 placeholder={packHint(row.unit)}
-                className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+                className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums disabled:bg-slate-50 disabled:opacity-60"
               />
               {row.unit && <span className="text-xs text-muted whitespace-nowrap">{row.unit}</span>}
             </div>
@@ -478,8 +501,9 @@ function GridRow({ row }: { row: EpicerieRow }) {
                 value={packPrice ?? ""}
                 onChange={(e) => setPackPrice(e.target.value)}
                 onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
+                disabled={!canEdit}
                 placeholder="—"
-                className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums"
+                className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums disabled:bg-slate-50 disabled:opacity-60"
               />
             </div>
           </td>
@@ -490,8 +514,9 @@ function GridRow({ row }: { row: EpicerieRow }) {
                 <span className="font-semibold">{packRoundUp ? packsToBuy : packsToBuy.toFixed(2)}</span>
                 <span className="text-muted">{packLabel}</span>
                 <button
-                  onClick={() => { const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
-                  className={`ml-0.5 text-[10px] px-1 py-0.5 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}
+                  onClick={() => { if (!canEdit) return; const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
+                  disabled={!canEdit}
+                  className={`ml-0.5 text-[10px] px-1 py-0.5 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"} disabled:opacity-60`}
                   title={packRoundUp ? "Mode 'entier' (œufs, paquets)" : "Mode 'continu' (kg, L)"}
                 >
                   {packRoundUp ? "⤴" : "≈"}
