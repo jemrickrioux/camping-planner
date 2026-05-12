@@ -28,7 +28,15 @@ export default async function DashboardPage() {
     .where(sql`${schema.todos.tripId} = ${trip.id} AND ${schema.todos.status} != 'Fait'`);
 
   const siteCost = Number(trip.siteCost ?? 0);
-  const rentalCost = Number(trip.rentalCost ?? 0);
+  // Compute canoe rental cost from the /canots tab (with taxes)
+  const [canoeRow] = await db
+    .select({
+      total: sql<string>`COALESCE(SUM(${schema.canoes.dailyRate} * ${schema.canoes.days}), 0)::text`,
+    })
+    .from(schema.canoes)
+    .where(eq(schema.canoes.tripId, trip.id));
+  const canoeSubtotal = Number(canoeRow.total ?? 0);
+  const rentalCost = canoeSubtotal > 0 ? canoeSubtotal * 1.15 : Number(trip.rentalCost ?? 0);
 
   const [groceryCostRow] = await db
     .select({ total: sql<string>`COALESCE(SUM(${schema.groceryItems.cost}), 0)::text` })
@@ -70,7 +78,7 @@ export default async function DashboardPage() {
         <h2 className="text-base font-semibold mb-3 text-muted">Actions rapides</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <ActionCard href="/lifts" emoji="🚗" label="Lifts" desc="Aller + retour" bg="from-sky-50 to-cyan-50" />
-          <ActionCard href="/stock-perso" emoji="🎒" label="Mon stock" desc="Coche tes items" bg="from-amber-50 to-orange-50" />
+          <ActionCard href="/canots" emoji="🛶" label="Canots" desc="Location + placement" bg="from-teal-50 to-cyan-50" />
           <ActionCard href="/stock-commun" emoji="📦" label="Stock commun" desc={`${communSansOwner.count ?? 0} sans owner`} bg="from-rose-50 to-pink-50" badge={communSansOwner.count ?? 0} />
           <ActionCard href="/epicerie" emoji="🛒" label="Épicerie" desc="Groupes d'achat" bg="from-emerald-50 to-teal-50" />
           <ActionCard href="/boissons" emoji="🍻" label="Boissons" desc="Pool partagé" bg="from-yellow-50 to-amber-50" />

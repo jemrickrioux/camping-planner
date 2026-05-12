@@ -277,6 +277,54 @@ export async function deleteParticipant(id: number) {
   revalidatePath("/");
 }
 
+// ── Canoes ───────────────────────────────────────────────────────────────
+export async function addCanoe(tripId: number, data: {
+  type: string; capacity: number; dailyRate: string; days?: number; notes?: string;
+}) {
+  const position = await getNextPosition("commun_stock_items", tripId); // re-use pattern; canoes table not in enum
+  // re-query for canoes
+  const r = await db.execute(sql`SELECT COALESCE(MAX(position), 0) + 1 AS next FROM canoes WHERE trip_id = ${tripId}`);
+  type Row = { next: number | string };
+  const rows = (r as unknown as { rows?: Row[] } & Row[]).rows ?? (r as unknown as Row[]);
+  const canoePosition = Number(rows?.[0]?.next ?? position);
+  await db.insert(schema.canoes).values({
+    tripId, position: canoePosition,
+    type: data.type, capacity: data.capacity, dailyRate: data.dailyRate,
+    days: data.days ?? 4, notes: data.notes || null,
+  });
+  revalidatePath("/canots");
+  revalidatePath("/");
+}
+
+export async function updateCanoe(id: number, data: Partial<{
+  type: string; capacity: number; dailyRate: string; days: number; notes: string;
+}>) {
+  await db.update(schema.canoes).set(data).where(eq(schema.canoes.id, id));
+  revalidatePath("/canots");
+  revalidatePath("/");
+}
+
+export async function deleteCanoe(id: number) {
+  await db.delete(schema.canoes).where(eq(schema.canoes.id, id));
+  revalidatePath("/canots");
+  revalidatePath("/");
+}
+
+export async function assignPaddler(canoeId: number, participantId: number) {
+  await db
+    .insert(schema.canoePaddlers)
+    .values({ canoeId, participantId })
+    .onConflictDoNothing();
+  revalidatePath("/canots");
+}
+
+export async function unassignPaddler(canoeId: number, participantId: number) {
+  await db
+    .delete(schema.canoePaddlers)
+    .where(and(eq(schema.canoePaddlers.canoeId, canoeId), eq(schema.canoePaddlers.participantId, participantId)));
+  revalidatePath("/canots");
+}
+
 
 // ── Drinks ───────────────────────────────────────────────────────────────
 export async function updateDrink(id: number, data: {

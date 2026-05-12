@@ -145,6 +145,27 @@ export const todos = pgTable("todos", {
   notes: text("notes"),
 });
 
+export const canoes = pgTable("canoes", {
+  id: serial("id").primaryKey(),
+  tripId: integer("trip_id").notNull().references(() => trips.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+  type: text("type").notNull(),
+  capacity: integer("capacity").notNull(),
+  dailyRate: numeric("daily_rate", { precision: 10, scale: 2 }).notNull(),
+  days: integer("days").notNull().default(4),
+  notes: text("notes"),
+});
+
+export const canoePaddlers = pgTable("canoe_paddlers", {
+  canoeId: integer("canoe_id").notNull().references(() => canoes.id, { onDelete: "cascade" }),
+  participantId: integer("participant_id").notNull().references(() => participants.id, { onDelete: "cascade" }),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.canoeId, table.participantId] }),
+}));
+
+export type Canoe = typeof canoes.$inferSelect;
+export type CanoePaddler = typeof canoePaddlers.$inferSelect;
+
 export type Participant = typeof participants.$inferSelect;
 export type Trip = typeof trips.$inferSelect;
 export type MenuItem = typeof menuItems.$inferSelect;
