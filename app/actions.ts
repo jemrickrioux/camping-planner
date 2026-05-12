@@ -4,6 +4,26 @@ import { db, schema } from "@/lib/db";
 import { eq, and, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
+// ── Trip details (organizer only) ────────────────────────────────────────
+export async function updateTrip(id: number, data: Partial<{
+  destination: string;
+  site: string;
+  reservationNo: string;
+  startDate: string;
+  endDate: string;
+  arrivalTime: string;
+  departureTime: string;
+  siteCost: string;
+  rentalCost: string;
+  contactPhone: string;
+  contactEmail: string;
+  contactAddress: string;
+  notes: string;
+}>) {
+  await db.update(schema.trips).set(data).where(eq(schema.trips.id, id));
+  revalidatePath("/");
+}
+
 // ── Participants ─────────────────────────────────────────────────────────
 export async function updateParticipant(id: number, data: {
   confirmed?: string;

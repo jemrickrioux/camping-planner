@@ -3,6 +3,7 @@ import { getCurrentTrip, getConfirmedCount, getParticipants } from "@/lib/trip";
 import { eq, sql } from "drizzle-orm";
 import Link from "next/link";
 import { Countdown } from "@/components/countdown";
+import { TripInfoCards } from "./trip-info-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -97,20 +98,8 @@ export default async function DashboardPage() {
         allConfirmed={allConfirmed}
       />
 
-      {/* INFO PRATIQUE */}
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card title="📍 Site &amp; accès">
-          <Row label="Réservation" value={`#${trip.reservationNo}`} />
-          <Row label="Arrivée" value={`${trip.arrivalTime?.slice(0, 5)} le ${new Date(trip.startDate!).toLocaleDateString("fr-CA", { weekday: "long", day: "numeric" })}`} />
-          <Row label="Départ" value={`${trip.departureTime?.slice(0, 5)} le ${new Date(trip.endDate!).toLocaleDateString("fr-CA", { weekday: "long", day: "numeric" })}`} />
-          <Row label="Adresse" value={trip.contactAddress} />
-        </Card>
-        <Card title="📞 Parc — pour ravitaillement">
-          <Row label="Téléphone" value={<a className="text-primary underline" href={`tel:${trip.contactPhone}`}>{trip.contactPhone}</a>} />
-          <Row label="Email" value={<a className="text-primary underline" href={`mailto:${trip.contactEmail}`}>{trip.contactEmail}</a>} />
-          <p className="text-xs text-muted pt-1">💡 Bateau-patrouille livre bois, glace, eau. Commander avant 11h le jour.</p>
-        </Card>
-      </section>
+      {/* INFO PRATIQUE — editable for organizer */}
+      <TripInfoCards trip={trip} />
 
       {(todosOpen.count ?? 0) > 0 && (
         <section className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
