@@ -129,7 +129,7 @@ export default async function EpiceriePage() {
         <Stat label="Coût / pers" value={formatCurrency(costPerPax)} accent="ok" />
       </div>
 
-      <EpicerieTable rows={rows} participants={participants} />
+      <EpicerieTable rows={rows} participants={participants} tripId={trip.id} />
     </div>
   );
 }

@@ -42,12 +42,21 @@ export const participants = pgTable("participants", {
   confirmed: text("confirmed").notNull().default("?"),
   allergies: text("allergies"),
   notes: text("notes"),
-  // Lift / carpooling
-  liftRole: text("lift_role"), // 'driver' | 'passenger' | 'self' | null
+  // Arrival/Departure (which meal you join/leave at)
+  arrivalMeal: text("arrival_meal"),  // e.g. "Vendredi-Souper"
+  departureMeal: text("departure_meal"), // e.g. "Lundi-Dîner"
+  // Lift outbound (going TO camp)
+  liftRole: text("lift_role"),
   liftSeats: integer("lift_seats"),
   liftFrom: text("lift_from"),
   liftTime: text("lift_time"),
   liftDriverId: integer("lift_driver_id"),
+  // Lift return (going home)
+  liftReturnRole: text("lift_return_role"),
+  liftReturnSeats: integer("lift_return_seats"),
+  liftReturnFrom: text("lift_return_from"),
+  liftReturnTime: text("lift_return_time"),
+  liftReturnDriverId: integer("lift_return_driver_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 

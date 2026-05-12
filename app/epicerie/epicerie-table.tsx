@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import type { Participant } from "@/db/schema";
 import type { EpicerieRow } from "./page";
-import { updateGroceryItem, updateDrink } from "@/app/actions";
+import { updateGroceryItem, updateDrink, bulkAssignGrocerySection } from "@/app/actions";
 import { useWhoAmI, Avatar } from "@/components/who-am-i";
 
 const SECTION_META: Record<string, { color: string; emoji: string }> = {
@@ -17,7 +17,7 @@ const SECTION_META: Record<string, { color: string; emoji: string }> = {
   "Dépanneur": { color: "from-slate-50 to-slate-100 border-slate-200", emoji: "🛒" },
 };
 
-export function EpicerieTable({ rows, participants }: { rows: EpicerieRow[]; participants: Participant[] }) {
+export function EpicerieTable({ rows, participants, tripId }: { rows: EpicerieRow[]; participants: Participant[]; tripId: number }) {
   const { participantId } = useWhoAmI();
   const [filter, setFilter] = useState<"all" | "mine" | "no-buyer" | "todo">("all");
 
@@ -51,17 +51,30 @@ export function EpicerieTable({ rows, participants }: { rows: EpicerieRow[]; par
         </FilterChip>
       </div>
 
+      <div className="bg-sky-50 border border-sky-200 rounded-xl p-3 text-sm text-sky-900">
+        💡 <strong>Idée :</strong> faites max 2 personnes qui achètent (celles avec glacières). Utilise le bouton "Assigner toute la section" pour grouper rapidement.
+      </div>
+
       <div className="space-y-3">
         {sections.map((section) => {
           const meta = SECTION_META[section] ?? { color: "from-slate-50 to-slate-100 border-slate-200", emoji: "📦" };
           const sectionRows = filtered.filter((r) => r.section === section);
           if (sectionRows.length === 0) return null;
+          // Don't allow bulk-assign on virtual "Boissons (pool)" rows (those are drinks)
+          const showBulk = section !== "Boissons (pool)";
           return (
             <div key={section} className={`rounded-2xl border bg-gradient-to-br ${meta.color} overflow-hidden`}>
-              <div className="px-4 py-3 flex items-center gap-2 border-b border-white/60">
+              <div className="px-4 py-3 flex flex-wrap items-center gap-2 border-b border-white/60">
                 <span className="text-2xl">{meta.emoji}</span>
                 <h3 className="font-semibold flex-1">{section}</h3>
                 <span className="text-xs text-muted">{sectionRows.length} items</span>
+                {showBulk && (
+                  <SectionBulkAssign
+                    section={section}
+                    tripId={tripId}
+                    participants={participants}
+                  />
+                )}
               </div>
               <ul className="divide-y divide-white/60 bg-white/40">
                 {sectionRows.map((row) => (
@@ -186,6 +199,43 @@ function Row({
         )}
       </div>
     </div>
+  );
+}
+
+function SectionBulkAssign({
+  section, tripId, participants,
+}: {
+  section: string;
+  tripId: number;
+  participants: Participant[];
+}) {
+  const [, startTransition] = useTransition();
+  return (
+    <select
+      defaultValue=""
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v === "") return;
+        const buyerId = v === "NONE" ? null : parseInt(v, 10);
+        if (!confirm(v === "NONE"
+          ? `Vider l'acheteur pour toute la section "${section}" ?`
+          : `Assigner toute la section "${section}" à ${participants.find((p) => p.id === buyerId)?.name} ?`
+        )) {
+          e.target.value = "";
+          return;
+        }
+        startTransition(() => bulkAssignGrocerySection(tripId, section, buyerId));
+        e.target.value = "";
+      }}
+      className="text-xs px-2 py-1 border border-border rounded-full bg-white"
+      title="Assigner toute la section à un acheteur"
+    >
+      <option value="">⚡ Assigner section…</option>
+      <option value="NONE">— Aucun —</option>
+      {participants.map((p) => (
+        <option key={p.id} value={p.id}>{p.name}</option>
+      ))}
+    </select>
   );
 }
 

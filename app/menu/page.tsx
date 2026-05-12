@@ -21,7 +21,7 @@ export default async function MenuPage() {
           Source de vérité de l'épicerie. Modifier une qté/pers ici → l'épicerie se recalcule automatiquement.
         </p>
       </div>
-      <MenuByDay items={items} />
+      <MenuByDay items={items} tripId={trip.id} />
     </div>
   );
 }

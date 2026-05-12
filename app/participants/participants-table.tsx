@@ -2,9 +2,10 @@
 
 import { useState, useTransition } from "react";
 import type { Participant } from "@/db/schema";
-import { updateParticipant } from "@/app/actions";
+import { updateParticipant, updateArrivalDeparture } from "@/app/actions";
 import { useWhoAmI, Avatar } from "@/components/who-am-i";
 import { formatPhone } from "@/lib/format";
+import { MEAL_SLOTS } from "@/lib/meals";
 
 export function ParticipantsTable({ participants }: { participants: Participant[] }) {
   const { participantId, isOrganizer } = useWhoAmI();
@@ -23,10 +24,16 @@ function Card({ participant, canEdit, isMe }: { participant: Participant; canEdi
   const [confirmed, setConfirmed] = useState(participant.confirmed);
   const [phone, setPhone] = useState(formatPhone(participant.phone));
   const [allergies, setAllergies] = useState(participant.allergies ?? "");
+  const [arrival, setArrival] = useState(participant.arrivalMeal ?? "");
+  const [departure, setDeparture] = useState(participant.departureMeal ?? "");
   const [, startTransition] = useTransition();
 
   const save = (data: Partial<Participant>) => {
     startTransition(() => updateParticipant(participant.id, data as never));
+  };
+
+  const saveAD = (data: { arrivalMeal?: string | null; departureMeal?: string | null }) => {
+    startTransition(() => updateArrivalDeparture(participant.id, data));
   };
 
   const handlePhoneChange = (raw: string) => {
@@ -34,18 +41,18 @@ function Card({ participant, canEdit, isMe }: { participant: Participant; canEdi
   };
 
   const confirmedColor =
-    confirmed === "OUI"
-      ? "bg-emerald-100 text-emerald-800"
-      : confirmed === "NON"
-      ? "bg-rose-100 text-rose-800"
-      : "bg-amber-100 text-amber-800";
+    confirmed === "OUI" ? "bg-emerald-100 text-emerald-800"
+    : confirmed === "NON" ? "bg-rose-100 text-rose-800"
+    : "bg-amber-100 text-amber-800";
 
   const cardBorder =
-    confirmed === "OUI" ? "border-emerald-200" : confirmed === "NON" ? "border-rose-200" : "border-amber-200";
+    confirmed === "OUI" ? "border-emerald-200"
+    : confirmed === "NON" ? "border-rose-200"
+    : "border-amber-200";
 
   return (
-    <div className={`bg-card rounded-2xl border-2 ${cardBorder} p-4`}>
-      <div className="flex items-center gap-3 mb-3">
+    <div className={`bg-card rounded-2xl border-2 ${cardBorder} p-4 space-y-3`}>
+      <div className="flex items-center gap-3">
         <Avatar name={participant.name} size={48} />
         <div className="flex-1 min-w-0">
           <div className="font-semibold truncate">
@@ -59,15 +66,34 @@ function Card({ participant, canEdit, isMe }: { participant: Participant; canEdi
               onChange={(e) => { setConfirmed(e.target.value); save({ confirmed: e.target.value }); }}
               className={`mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${confirmedColor}`}
             >
-              <option value="OUI">OUI</option>
-              <option value="NON">NON</option>
-              <option value="?">?</option>
+              <option value="?">? — Pas encore confirmé</option>
+              <option value="OUI">OUI — Je viens</option>
+              <option value="NON">NON — Je viens pas</option>
             </select>
           ) : (
             <span className={`inline-block mt-1 px-2 py-0.5 rounded-full text-xs font-medium ${confirmedColor}`}>{confirmed}</span>
           )}
         </div>
       </div>
+
+      {confirmed === "OUI" && (
+        <div className="grid grid-cols-2 gap-2">
+          <MealPicker
+            label="🛬 Premier repas"
+            value={arrival}
+            onChange={(v) => { setArrival(v); saveAD({ arrivalMeal: v || null }); }}
+            editable={canEdit}
+            includeNone="Pas décidé"
+          />
+          <MealPicker
+            label="🛫 Dernier repas"
+            value={departure}
+            onChange={(v) => { setDeparture(v); saveAD({ departureMeal: v || null }); }}
+            editable={canEdit}
+            includeNone="Pas décidé"
+          />
+        </div>
+      )}
 
       <div className="space-y-2 text-sm">
         <Field
@@ -88,6 +114,41 @@ function Card({ participant, canEdit, isMe }: { participant: Participant; canEdi
         />
       </div>
     </div>
+  );
+}
+
+function MealPicker({
+  label, value, onChange, editable, includeNone,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  editable: boolean;
+  includeNone?: string;
+}) {
+  if (!editable) {
+    const slot = MEAL_SLOTS.find((s) => s.key === value);
+    return (
+      <div className="text-sm">
+        <div className="text-xs text-muted">{label}</div>
+        <div className="font-medium">{slot ? `${slot.emoji} ${slot.label}` : "—"}</div>
+      </div>
+    );
+  }
+  return (
+    <label className="text-sm">
+      <span className="text-xs text-muted">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full mt-0.5 px-2 py-1.5 border border-border rounded-md bg-white text-sm"
+      >
+        <option value="">{includeNone}</option>
+        {MEAL_SLOTS.map((s) => (
+          <option key={s.key} value={s.key}>{s.emoji} {s.label}</option>
+        ))}
+      </select>
+    </label>
   );
 }
 
