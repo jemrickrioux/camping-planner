@@ -153,10 +153,10 @@ function PriceGrid({ rows }: { rows: EpicerieRow[] }) {
               <th className="px-2 py-2 font-semibold w-10 text-center">✓</th>
               <th className="px-2 py-2 font-semibold">Item</th>
               <th className="px-2 py-2 font-semibold text-right whitespace-nowrap">Besoin</th>
-              <th className="px-2 py-2 font-semibold w-24">Pack</th>
-              <th className="px-2 py-2 font-semibold w-20 text-right">Taille</th>
-              <th className="px-2 py-2 font-semibold w-20 text-right">Prix/pack</th>
-              <th className="px-2 py-2 font-semibold w-28 text-right">À acheter</th>
+              <th className="px-2 py-2 font-semibold w-28">Pack</th>
+              <th className="px-2 py-2 font-semibold w-32 text-right">Taille</th>
+              <th className="px-2 py-2 font-semibold w-28 text-right">Prix/pack</th>
+              <th className="px-2 py-2 font-semibold w-32 text-right">À acheter</th>
               <th className="px-2 py-2 font-semibold w-20 text-right">Total</th>
             </tr>
           </thead>
@@ -250,20 +250,23 @@ function GridRow({ row }: { row: EpicerieRow }) {
           onBlur={() => save({ packLabel: packLabel || null })}
           placeholder="kg, dz…"
           disabled={isDrink || row.source === "note"}
-          className="w-full px-1.5 py-1 text-xs border border-border rounded-md bg-white disabled:bg-slate-50"
+          className="w-full px-2 py-1.5 text-sm border border-border rounded-md bg-white disabled:bg-slate-50"
         />
       </td>
 
       <td className="px-2 py-1.5">
-        <input
-          type="number" step="0.01"
-          value={packSize ?? ""}
-          onChange={(e) => setPackSize(e.target.value)}
-          onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
-          placeholder={row.unit ?? "—"}
-          disabled={isDrink || row.source === "note"}
-          className="w-full px-1.5 py-1 text-xs border border-border rounded-md text-right bg-white disabled:bg-slate-50"
-        />
+        <div className="flex items-center gap-1 justify-end">
+          <input
+            type="number" step="0.01"
+            value={packSize ?? ""}
+            onChange={(e) => setPackSize(e.target.value)}
+            onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
+            placeholder="—"
+            disabled={isDrink || row.source === "note"}
+            className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white disabled:bg-slate-50 tabular-nums"
+          />
+          {row.unit && <span className="text-xs text-muted whitespace-nowrap">{row.unit}</span>}
+        </div>
       </td>
 
       <td className="px-2 py-1.5">
@@ -276,7 +279,7 @@ function GridRow({ row }: { row: EpicerieRow }) {
             onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
             placeholder="—"
             disabled={isDrink || row.source === "note"}
-            className="flex-1 min-w-0 px-1.5 py-1 text-sm border border-border rounded-md text-right bg-white disabled:bg-slate-50"
+            className="flex-1 min-w-0 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white disabled:bg-slate-50 tabular-nums"
           />
         </div>
       </td>
