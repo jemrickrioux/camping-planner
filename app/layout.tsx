@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   description: "Organisation du voyage canot-camping juin 2026",
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function RootLayout({
   children,
 }: Readonly<{
