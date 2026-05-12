@@ -159,8 +159,9 @@ export const canoes = pgTable("canoes", {
 export const canoePaddlers = pgTable("canoe_paddlers", {
   canoeId: integer("canoe_id").notNull().references(() => canoes.id, { onDelete: "cascade" }),
   participantId: integer("participant_id").notNull().references(() => participants.id, { onDelete: "cascade" }),
+  direction: text("direction").notNull().default("outbound"), // 'outbound' | 'return'
 }, (table) => ({
-  pk: primaryKey({ columns: [table.canoeId, table.participantId] }),
+  pk: primaryKey({ columns: [table.canoeId, table.participantId, table.direction] }),
 }));
 
 export type Canoe = typeof canoes.$inferSelect;

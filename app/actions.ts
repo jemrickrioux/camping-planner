@@ -330,18 +330,37 @@ export async function deleteCanoe(id: number) {
   revalidatePath("/");
 }
 
-export async function assignPaddler(canoeId: number, participantId: number) {
+export async function assignPaddler(canoeId: number, participantId: number, direction: "outbound" | "return" = "outbound") {
   await db
     .insert(schema.canoePaddlers)
-    .values({ canoeId, participantId })
+    .values({ canoeId, participantId, direction })
     .onConflictDoNothing();
   revalidatePath("/canots");
 }
 
-export async function unassignPaddler(canoeId: number, participantId: number) {
+export async function unassignPaddler(canoeId: number, participantId: number, direction: "outbound" | "return" = "outbound") {
   await db
     .delete(schema.canoePaddlers)
-    .where(and(eq(schema.canoePaddlers.canoeId, canoeId), eq(schema.canoePaddlers.participantId, participantId)));
+    .where(and(
+      eq(schema.canoePaddlers.canoeId, canoeId),
+      eq(schema.canoePaddlers.participantId, participantId),
+      eq(schema.canoePaddlers.direction, direction),
+    ));
+  revalidatePath("/canots");
+}
+
+export async function copyOutboundToReturn(canoeId: number) {
+  // Copy all outbound paddlers to return for this canoe
+  const outboundPaddlers = await db
+    .select()
+    .from(schema.canoePaddlers)
+    .where(and(eq(schema.canoePaddlers.canoeId, canoeId), eq(schema.canoePaddlers.direction, "outbound")));
+  for (const p of outboundPaddlers) {
+    await db
+      .insert(schema.canoePaddlers)
+      .values({ canoeId, participantId: p.participantId, direction: "return" })
+      .onConflictDoNothing();
+  }
   revalidatePath("/canots");
 }
 

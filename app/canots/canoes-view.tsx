@@ -2,9 +2,11 @@
 
 import { useState, useTransition } from "react";
 import type { Canoe, CanoePaddler, Participant } from "@/db/schema";
-import { addCanoe, updateCanoe, deleteCanoe, assignPaddler, unassignPaddler } from "@/app/actions";
+import { addCanoe, updateCanoe, deleteCanoe, assignPaddler, unassignPaddler, copyOutboundToReturn } from "@/app/actions";
 import { useWhoAmI, Avatar } from "@/components/who-am-i";
 import { CANOE_CATALOG } from "@/lib/canoe-catalog";
+
+type Direction = "outbound" | "return";
 
 function formatCurrency(n: number) {
   return new Intl.NumberFormat("fr-CA", { style: "currency", currency: "CAD" }).format(n);
@@ -15,12 +17,15 @@ export function CanoesView({
 }: {
   tripId: number;
   canoes: Canoe[];
-  paddlers: CanoePaddler[];
+  paddlers: (CanoePaddler & { direction: string })[];
   participants: Participant[];
 }) {
   const { isOrganizer } = useWhoAmI();
+  const [dir, setDir] = useState<Direction>("outbound");
   const confirmedParticipants = participants.filter((p) => p.confirmed === "OUI");
-  const assignedIds = new Set(paddlers.map((p) => p.participantId));
+
+  const paddlersForDir = paddlers.filter((p) => p.direction === dir);
+  const assignedIds = new Set(paddlersForDir.map((p) => p.participantId));
   const unassigned = confirmedParticipants.filter((p) => !assignedIds.has(p.id));
 
   const totalCapacity = canoes.reduce((s, c) => s + c.capacity, 0);
@@ -31,14 +36,32 @@ export function CanoesView({
     <div className="space-y-4">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Canots" value={canoes.length} accent="primary" />
-        <Stat label="Places" value={`${paddlers.length}/${totalCapacity}`} accent={paddlers.length === totalCapacity && totalCapacity >= confirmedParticipants.length ? "ok" : "warn"} />
-        <Stat label="Confirmés à placer" value={unassigned.length} accent={unassigned.length === 0 ? "ok" : "warn"} />
-        <Stat label="Total location" value={formatCurrency(totalCost)} accent="ok" hint={`taxes incl. ≈ ${formatCurrency(taxed)}`} />
+        <Stat label="Capacité totale" value={totalCapacity} accent="primary" />
+        <Stat label="Coût location" value={formatCurrency(totalCost)} accent="ok" hint={`taxes incl. ≈ ${formatCurrency(taxed)}`} />
+        <Stat label="Confirmés" value={confirmedParticipants.length} accent="primary" />
       </div>
+
+      {/* Direction tabs */}
+      <div className="flex gap-2 bg-slate-100 rounded-full p-1 w-fit">
+        <DirTab active={dir === "outbound"} onClick={() => setDir("outbound")}>
+          ➡️ Aller (vers le site)
+        </DirTab>
+        <DirTab active={dir === "return"} onClick={() => setDir("return")}>
+          ⬅️ Retour (vers la maison)
+        </DirTab>
+      </div>
+
+      <p className="text-sm text-muted">
+        Tu peux mettre des paddleurs différents pour l'aller vs le retour (ex. quelqu'un part avant, ou la répartition change). Les canots sont les mêmes (loués pour 4 jours).
+      </p>
+
+      <p className="text-sm">
+        <strong>{dir === "outbound" ? "Aller" : "Retour"}</strong> · {paddlersForDir.length}/{totalCapacity} places assignées · {unassigned.length} confirmé{unassigned.length > 1 ? "s" : ""} à placer
+      </p>
 
       {unassigned.length > 0 && canoes.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
-          <div className="font-semibold text-amber-900 mb-1.5">⏳ À placer dans un canot :</div>
+          <div className="font-semibold text-amber-900 mb-1.5">⏳ À placer pour le {dir === "outbound" ? "aller" : "retour"} :</div>
           <div className="flex flex-wrap gap-1.5">
             {unassigned.map((p) => (
               <span key={p.id} className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-amber-200 rounded-full text-xs">
@@ -62,7 +85,8 @@ export function CanoesView({
             <li key={c.id}>
               <CanoeCard
                 canoe={c}
-                paddlers={paddlers.filter((p) => p.canoeId === c.id)}
+                paddlers={paddlers}
+                direction={dir}
                 participants={participants}
                 unassigned={unassigned}
                 isOrganizer={isOrganizer}
@@ -73,7 +97,7 @@ export function CanoesView({
       )}
 
       <p className="text-xs text-muted">
-        Tarifs du <a className="underline" href="https://poissonblanc.ca/informations/location-dembarcations/" target="_blank" rel="noreferrer">Parc régional du Poisson Blanc</a> · taxes en sus · jupettes, VFI, pagaies, écope inclus.
+        Tarifs du <a className="underline" href="https://poissonblanc.ca/informations/location-dembarcations/" target="_blank" rel="noreferrer">Parc régional du Poisson Blanc</a> · taxes en sus · VFI, pagaies, écope, jupettes inclus.
       </p>
     </div>
   );
@@ -138,10 +162,11 @@ function AddCanoeForm({ tripId }: { tripId: number }) {
 }
 
 function CanoeCard({
-  canoe, paddlers, participants, unassigned, isOrganizer,
+  canoe, paddlers, direction, participants, unassigned, isOrganizer,
 }: {
   canoe: Canoe;
-  paddlers: CanoePaddler[];
+  paddlers: (CanoePaddler & { direction: string })[];
+  direction: Direction;
   participants: Participant[];
   unassigned: Participant[];
   isOrganizer: boolean;
@@ -151,9 +176,13 @@ function CanoeCard({
   const [, startTransition] = useTransition();
 
   const assignedPaddlers = paddlers
+    .filter((p) => p.canoeId === canoe.id && p.direction === direction)
     .map((p) => participants.find((part) => part.id === p.participantId))
     .filter((p): p is Participant => !!p);
   const freeSeats = canoe.capacity - assignedPaddlers.length;
+
+  // Count outbound paddlers (for copy-from-aller button on return tab)
+  const outboundCount = paddlers.filter((p) => p.canoeId === canoe.id && p.direction === "outbound").length;
 
   const totalForCanoe = Number(rate) * days;
 
@@ -163,11 +192,15 @@ function CanoeCard({
   };
 
   const handleAdd = (pid: number) => {
-    startTransition(() => assignPaddler(canoe.id, pid));
+    startTransition(() => assignPaddler(canoe.id, pid, direction));
   };
 
   const handleRemove = (pid: number) => {
-    startTransition(() => unassignPaddler(canoe.id, pid));
+    startTransition(() => unassignPaddler(canoe.id, pid, direction));
+  };
+
+  const handleCopyFromOutbound = () => {
+    startTransition(() => copyOutboundToReturn(canoe.id));
   };
 
   return (
@@ -186,7 +219,6 @@ function CanoeCard({
         )}
       </div>
 
-      {/* Paddlers */}
       <div className="space-y-1.5">
         {assignedPaddlers.map((p) => (
           <div key={p.id} className="flex items-center gap-2 bg-white/60 rounded-lg px-2 py-1.5">
@@ -200,12 +232,20 @@ function CanoeCard({
         ))}
       </div>
 
-      {/* Quick assign unassigned */}
+      {direction === "return" && outboundCount > 0 && assignedPaddlers.length === 0 && (
+        <button
+          onClick={handleCopyFromOutbound}
+          className="w-full px-3 py-1.5 bg-sky-100 text-sky-800 rounded-full text-xs font-medium hover:bg-sky-200"
+        >
+          📋 Copier les {outboundCount} pagayeur{outboundCount > 1 ? "s" : ""} de l'aller
+        </button>
+      )}
+
       {freeSeats > 0 && unassigned.length > 0 && (
         <details>
           <summary className="text-xs text-muted cursor-pointer hover:text-foreground">+ Ajouter un pagayeur</summary>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {unassigned.slice(0, freeSeats > 0 ? unassigned.length : 0).map((p) => (
+            {unassigned.map((p) => (
               <button key={p.id} onClick={() => handleAdd(p.id)} className="inline-flex items-center gap-1.5 px-2 py-1 bg-white border border-border rounded-full text-xs hover:border-primary">
                 <Avatar name={p.name} size={16} />
                 {p.name.split(" ")[0]}
@@ -215,7 +255,6 @@ function CanoeCard({
         </details>
       )}
 
-      {/* Pricing */}
       <div className="flex items-center gap-2 text-sm border-t border-white/60 pt-2">
         {isOrganizer ? (
           <>
@@ -246,6 +285,19 @@ function CanoeCard({
         <span className="ml-auto font-bold tabular-nums">{formatCurrency(totalForCanoe)}</span>
       </div>
     </div>
+  );
+}
+
+function DirTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-1.5 rounded-full text-sm font-medium transition ${
+        active ? "bg-white shadow-sm text-foreground" : "text-muted hover:text-foreground"
+      }`}
+    >
+      {children}
+    </button>
   );
 }
 
