@@ -5,22 +5,27 @@ import type { Participant } from "@/db/schema";
 import { updateParticipant, updateArrivalDeparture } from "@/app/actions";
 import { useWhoAmI, Avatar } from "@/components/who-am-i";
 import { formatPhone } from "@/lib/format";
-import { MEAL_SLOTS } from "@/lib/meals";
+import type { MealSlot } from "@/lib/meals";
 
-export function ParticipantsTable({ participants }: { participants: Participant[] }) {
+export function ParticipantsTable({ participants, mealSlots }: { participants: Participant[]; mealSlots: MealSlot[] }) {
   const { participantId, isOrganizer } = useWhoAmI();
   return (
     <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
       {participants.map((p) => (
         <li key={p.id}>
-          <Card participant={p} canEdit={p.id === participantId || isOrganizer} isMe={p.id === participantId} />
+          <Card
+            participant={p}
+            canEdit={p.id === participantId || isOrganizer}
+            isMe={p.id === participantId}
+            mealSlots={mealSlots}
+          />
         </li>
       ))}
     </ul>
   );
 }
 
-function Card({ participant, canEdit, isMe }: { participant: Participant; canEdit: boolean; isMe: boolean }) {
+function Card({ participant, canEdit, isMe, mealSlots }: { participant: Participant; canEdit: boolean; isMe: boolean; mealSlots: MealSlot[] }) {
   const [confirmed, setConfirmed] = useState(participant.confirmed);
   const [phone, setPhone] = useState(formatPhone(participant.phone));
   const [allergies, setAllergies] = useState(participant.allergies ?? "");
@@ -84,6 +89,7 @@ function Card({ participant, canEdit, isMe }: { participant: Participant; canEdi
             onChange={(v) => { setArrival(v); saveAD({ arrivalMeal: v || null }); }}
             editable={canEdit}
             includeNone="Pas décidé"
+            slots={mealSlots}
           />
           <MealPicker
             label="🛫 Dernier repas"
@@ -91,6 +97,7 @@ function Card({ participant, canEdit, isMe }: { participant: Participant; canEdi
             onChange={(v) => { setDeparture(v); saveAD({ departureMeal: v || null }); }}
             editable={canEdit}
             includeNone="Pas décidé"
+            slots={mealSlots}
           />
         </div>
       )}
@@ -118,16 +125,17 @@ function Card({ participant, canEdit, isMe }: { participant: Participant; canEdi
 }
 
 function MealPicker({
-  label, value, onChange, editable, includeNone,
+  label, value, onChange, editable, includeNone, slots,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   editable: boolean;
   includeNone?: string;
+  slots: MealSlot[];
 }) {
   if (!editable) {
-    const slot = MEAL_SLOTS.find((s) => s.key === value);
+    const slot = slots.find((s) => s.key === value);
     return (
       <div className="text-sm">
         <div className="text-xs text-muted">{label}</div>
@@ -144,7 +152,7 @@ function MealPicker({
         className="w-full mt-0.5 px-2 py-1.5 border border-border rounded-md bg-white text-sm"
       >
         <option value="">{includeNone}</option>
-        {MEAL_SLOTS.map((s) => (
+        {slots.map((s) => (
           <option key={s.key} value={s.key}>{s.emoji} {s.label}</option>
         ))}
       </select>

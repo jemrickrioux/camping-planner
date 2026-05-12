@@ -1,9 +1,9 @@
 import { db, schema } from "@/lib/db";
-import { getCurrentTrip, getParticipants } from "@/lib/trip";
+import { getCurrentTrip, getParticipants, getMealSlots } from "@/lib/trip";
 import { eq } from "drizzle-orm";
 import { MenuByDay } from "./menu-by-day";
 import { AddMenuForm } from "./add-menu-form";
-import { MEAL_SLOTS, isAtMeal } from "@/lib/meals";
+import { isAtMealWithSlots } from "@/lib/meals";
 
 export const dynamic = "force-dynamic";
 
@@ -16,9 +16,10 @@ export default async function MenuPage() {
     .where(eq(schema.menuItems.tripId, trip.id))
     .orderBy(schema.menuItems.position);
 
-  const attendance = MEAL_SLOTS.map((slot) => ({
+  const slots = await getMealSlots();
+  const attendance = slots.map((slot) => ({
     slot,
-    count: participants.filter((p) => isAtMeal(p, slot.key)).length,
+    count: participants.filter((p) => isAtMealWithSlots(slots, p, slot.key)).length,
     confirmedTotal: participants.filter((p) => p.confirmed === "OUI").length,
   }));
 

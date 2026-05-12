@@ -29,3 +29,14 @@ export const getConfirmedCount = cache(async () => {
   const participants = await getParticipants();
   return participants.filter((p) => p.confirmed === "OUI").length;
 });
+
+import { buildMealSlots } from "./meals";
+
+export const getMealSlots = cache(async () => {
+  const trip = await getCurrentTrip();
+  const items = await db
+    .select({ day: schema.menuItems.day, meal: schema.menuItems.meal })
+    .from(schema.menuItems)
+    .where(eq(schema.menuItems.tripId, trip.id));
+  return buildMealSlots(items);
+});

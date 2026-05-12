@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import type { Participant } from "@/db/schema";
 import { updateLift } from "@/app/actions";
 import { useWhoAmI, Avatar } from "@/components/who-am-i";
-import { MEAL_SLOTS, mealIndex } from "@/lib/meals";
+import type { MealSlot } from "@/lib/meals";
 
 type Direction = "outbound" | "return";
 
@@ -28,16 +28,16 @@ function getF<K extends keyof Participant>(p: Participant, key: K): Participant[
   return p[key];
 }
 
-function getDay(p: Participant, direction: Direction): string {
+function getDay(p: Participant, direction: Direction, slots: MealSlot[]): string {
   const mealKey = direction === "outbound" ? p.arrivalMeal : p.departureMeal;
   if (!mealKey) return DIR_META[direction].defaultDay;
-  const slot = MEAL_SLOTS.find((s) => s.key === mealKey);
+  const slot = slots.find((s) => s.key === mealKey);
   return slot?.day ?? DIR_META[direction].defaultDay;
 }
 
 const ALL_DAYS = ["Vendredi 12", "Samedi 13", "Dimanche 14", "Lundi 15"];
 
-export function LiftsView({ participants }: { participants: Participant[] }) {
+export function LiftsView({ participants, mealSlots }: { participants: Participant[]; mealSlots: MealSlot[] }) {
   const [dir, setDir] = useState<Direction>("outbound");
   return (
     <div className="space-y-5">
@@ -58,12 +58,12 @@ export function LiftsView({ participants }: { participants: Participant[] }) {
         {DIR_META[dir].subtitle} — chaque conducteur/passager apparaît dans le jour où il arrive (ou par défaut Ven/Lun).
         Définis tes 🛬 🛫 dans <a className="underline" href="/participants">Participants</a> pour bien classer.
       </p>
-      <DirectionView participants={participants} direction={dir} />
+      <DirectionView participants={participants} direction={dir} mealSlots={mealSlots} />
     </div>
   );
 }
 
-function DirectionView({ participants, direction }: { participants: Participant[]; direction: Direction }) {
+function DirectionView({ participants, direction, mealSlots }: { participants: Participant[]; direction: Direction; mealSlots: MealSlot[] }) {
   const { participantId, isOrganizer } = useWhoAmI();
   const f = FIELDS[direction];
 
@@ -82,7 +82,7 @@ function DirectionView({ participants, direction }: { participants: Participant[
     days.set(d, { day: d, drivers: [], solo: [], unassigned: [] });
   }
   for (const p of relevant) {
-    const day = getDay(p, direction);
+    const day = getDay(p, direction, mealSlots);
     const bucket = days.get(day);
     if (!bucket) continue;
     const role = getF(p, f.role);
@@ -114,6 +114,7 @@ function DirectionView({ participants, direction }: { participants: Participant[
               currentUserId={participantId!}
               isOrganizer={isOrganizer}
               allParticipants={relevant}
+              mealSlots={mealSlots}
             />
           );
         })
@@ -157,13 +158,14 @@ function DaySummary({ direction, days }: { direction: Direction; days: Map<strin
 }
 
 function DaySection({
-  direction, bucket, currentUserId, isOrganizer, allParticipants,
+  direction, bucket, currentUserId, isOrganizer, allParticipants, mealSlots,
 }: {
   direction: Direction;
   bucket: { day: string; drivers: Participant[]; solo: Participant[]; unassigned: Participant[] };
   currentUserId: number;
   isOrganizer: boolean;
   allParticipants: Participant[];
+  mealSlots: MealSlot[];
 }) {
   const f = FIELDS[direction];
   return (
@@ -190,6 +192,7 @@ function DaySection({
                 currentUserId={currentUserId}
                 isOrganizer={isOrganizer}
                 allParticipants={allParticipants}
+                mealSlots={mealSlots}
               />
             );
           })}
@@ -231,7 +234,7 @@ function DaySection({
 }
 
 function CarCard({
-  direction, driver, passengers, freeSeats, currentUserId, isOrganizer, allParticipants,
+  direction, driver, passengers, freeSeats, currentUserId, isOrganizer, allParticipants, mealSlots,
 }: {
   direction: Direction;
   driver: Participant;
@@ -240,6 +243,7 @@ function CarCard({
   currentUserId: number;
   isOrganizer: boolean;
   allParticipants: Participant[];
+  mealSlots: MealSlot[];
 }) {
   const f = FIELDS[direction];
   const isMyCar = driver.id === currentUserId;
@@ -267,8 +271,8 @@ function CarCard({
 
   // Joining: same day match (driver and current user both relate to driver's day)
   const me = allParticipants.find((p) => p.id === currentUserId);
-  const myDay = me ? getDay(me, direction) : null;
-  const driverDay = getDay(driver, direction);
+  const myDay = me ? getDay(me, direction, mealSlots) : null;
+  const driverDay = getDay(driver, direction, mealSlots);
   const meIsAssigned = !!(me && getF(me, f.role));
   const canJoin = !isMyCar && freeSeats > 0 && !meIsAssigned && myDay === driverDay;
 
@@ -451,4 +455,3 @@ function FieldInput({
   );
 }
 
-void mealIndex;

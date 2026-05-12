@@ -1,43 +1,74 @@
-// Ordered list of meal slots for the trip. Used for arrival/departure selectors
-// and for computing per-meal attendance.
+// Meal slots are *dynamic*: derived from the actual menu_items in DB.
+// This means removing all items from a meal in the Menu also removes
+// it from the arrival/departure pickers, attendance panels, etc.
 
-export const MEAL_SLOTS = [
-  { key: "Vendredi-Souper",   day: "Vendredi 12",  meal: "Souper",   label: "Ven 12 — Souper",   emoji: "🌙" },
-  { key: "Vendredi-Snacks",   day: "Vendredi 12",  meal: "Snacks",   label: "Ven 12 — Snacks",   emoji: "🍻" },
-  { key: "Samedi-Déjeuner",   day: "Samedi 13",    meal: "Déjeuner", label: "Sam 13 — Déjeuner", emoji: "🌅" },
-  { key: "Samedi-Dîner",      day: "Samedi 13",    meal: "Dîner",    label: "Sam 13 — Dîner",    emoji: "🥪" },
-  { key: "Samedi-Souper",     day: "Samedi 13",    meal: "Souper",   label: "Sam 13 — Souper",   emoji: "🥩" },
-  { key: "Samedi-Snacks",     day: "Samedi 13",    meal: "Snacks",   label: "Sam 13 — Snacks",   emoji: "🍻" },
-  { key: "Dimanche-Déjeuner", day: "Dimanche 14",  meal: "Déjeuner", label: "Dim 14 — Déjeuner", emoji: "🌅" },
-  { key: "Dimanche-Dîner",    day: "Dimanche 14",  meal: "Dîner",    label: "Dim 14 — Dîner",    emoji: "🥪" },
-  { key: "Dimanche-Souper",   day: "Dimanche 14",  meal: "Souper",   label: "Dim 14 — Souper",   emoji: "🥩" },
-  { key: "Dimanche-Snacks",   day: "Dimanche 14",  meal: "Snacks",   label: "Dim 14 — Snacks",   emoji: "🍻" },
-  { key: "Lundi-Déjeuner",    day: "Lundi 15",     meal: "Déjeuner", label: "Lun 15 — Déjeuner", emoji: "🌅" },
-  { key: "Lundi-Dîner",       day: "Lundi 15",     meal: "Dîner",    label: "Lun 15 — Dîner (sur la route)", emoji: "🚗" },
-] as const;
+const DAY_ORDER = ["Vendredi 12", "Samedi 13", "Dimanche 14", "Lundi 15"];
+const MEAL_ORDER = ["Déjeuner", "Dîner", "Souper", "Snacks"];
 
-export type MealKey = (typeof MEAL_SLOTS)[number]["key"];
+const MEAL_EMOJI: Record<string, string> = {
+  Déjeuner: "🌅",
+  Dîner: "🥪",
+  Souper: "🥩",
+  Snacks: "🍻",
+};
 
-export function mealIndex(key: string | null | undefined): number {
+export type MealSlot = {
+  key: string;       // canonical key, e.g. "Vendredi-Souper"
+  day: string;       // full day label, e.g. "Vendredi 12"
+  meal: string;      // meal type, e.g. "Souper"
+  label: string;     // short display, e.g. "Ven 12 — Souper"
+  emoji: string;
+};
+
+function shortDay(day: string): string {
+  // "Vendredi 12" → "Ven 12"
+  const [name, num] = day.split(" ");
+  return `${name.slice(0, 3)}${num ? ` ${num}` : ""}`;
+}
+
+function makeSlot(day: string, meal: string): MealSlot {
+  return {
+    key: `${day.split(" ")[0]}-${meal}`,
+    day,
+    meal,
+    label: `${shortDay(day)} — ${meal}`,
+    emoji: MEAL_EMOJI[meal] ?? "🍽️",
+  };
+}
+
+/** Build the ordered list of meal slots that actually have at least one item in the menu. */
+export function buildMealSlots(menuItems: { day: string; meal: string }[]): MealSlot[] {
+  const exists = new Set(menuItems.map((i) => `${i.day}::${i.meal}`));
+  const slots: MealSlot[] = [];
+  for (const day of DAY_ORDER) {
+    for (const meal of MEAL_ORDER) {
+      if (exists.has(`${day}::${meal}`)) slots.push(makeSlot(day, meal));
+    }
+  }
+  return slots;
+}
+
+export function mealIndexIn(slots: MealSlot[], key: string | null | undefined): number {
   if (!key) return -1;
-  return MEAL_SLOTS.findIndex((s) => s.key === key);
+  return slots.findIndex((s) => s.key === key);
 }
 
 export function getMealKey(day: string, meal: string): string {
   return `${day.split(" ")[0]}-${meal}`;
 }
 
-/** Returns true if participant is at this meal based on their arrival/departure. */
-export function isAtMeal(
+/** True if participant is at this meal (based on arrival/departure window) */
+export function isAtMealWithSlots(
+  slots: MealSlot[],
   participant: { arrivalMeal: string | null; departureMeal: string | null; confirmed: string },
   mealKey: string,
 ): boolean {
   if (participant.confirmed !== "OUI") return false;
-  const mIdx = mealIndex(mealKey);
+  const mIdx = mealIndexIn(slots, mealKey);
   if (mIdx < 0) return false;
-  const aIdx = mealIndex(participant.arrivalMeal);
-  const dIdx = mealIndex(participant.departureMeal);
-  // If not set, assume they're at every meal (default optimistic)
+  const aIdx = mealIndexIn(slots, participant.arrivalMeal);
+  const dIdx = mealIndexIn(slots, participant.departureMeal);
+  // If unset, assume present at all meals (optimistic)
   if (aIdx < 0 || dIdx < 0) return true;
   return mIdx >= aIdx && mIdx <= dIdx;
 }

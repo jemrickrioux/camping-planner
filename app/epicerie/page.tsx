@@ -1,9 +1,9 @@
 import { db, schema } from "@/lib/db";
-import { getCurrentTrip, getParticipants, getConfirmedCount } from "@/lib/trip";
+import { getCurrentTrip, getParticipants, getConfirmedCount, getMealSlots } from "@/lib/trip";
 import { eq } from "drizzle-orm";
 import { EpicerieTable } from "./epicerie-table";
 import { AddGroceryForm } from "./add-grocery-form";
-import { isAtMeal, getMealKey } from "@/lib/meals";
+import { isAtMealWithSlots, getMealKey } from "@/lib/meals";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +39,7 @@ export default async function EpiceriePage() {
     .orderBy(schema.groceryItems.position);
 
   // Per-meal attendance × menu items → per-item total quantity
+  const slots = await getMealSlots();
   const menuRows = await db.select().from(schema.menuItems)
     .where(eq(schema.menuItems.tripId, trip.id));
 
@@ -47,7 +48,7 @@ export default async function EpiceriePage() {
 
   for (const row of menuRows) {
     const mealKey = getMealKey(row.day, row.meal);
-    const attendees = participants.filter((p) => isAtMeal(p, mealKey)).length;
+    const attendees = participants.filter((p) => isAtMealWithSlots(slots, p, mealKey)).length;
     const qpp = Number(row.qtyPerPerson);
     const rowTotal = qpp * attendees;
     itemTotals.set(row.item, (itemTotals.get(row.item) ?? 0) + rowTotal);
