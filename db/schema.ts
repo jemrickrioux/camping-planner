@@ -115,7 +115,12 @@ export const groceryItems = pgTable("grocery_items", {
   fixedText: text("fixed_text"),
   margin: numeric("margin", { precision: 4, scale: 3 }).default("1.15"),
   buyerId: integer("buyer_id").references(() => participants.id, { onDelete: "set null" }),
-  cost: numeric("cost", { precision: 10, scale: 2 }),
+  cost: numeric("cost", { precision: 10, scale: 2 }),  // manual lump-sum cost (deprecated when pack fields set)
+  // Pack pricing: total = packs * pack_price, where packs = needed/pack_size (round up if pack_round_up)
+  packLabel: text("pack_label"),                          // "kg", "douzaine", "lb", "L", "paquet 24"
+  packSize: numeric("pack_size", { precision: 10, scale: 3 }),  // how many menu-units per pack (1000 for kg→g)
+  packPrice: numeric("pack_price", { precision: 10, scale: 2 }), // price for one pack
+  packRoundUp: boolean("pack_round_up").default(true),    // round up to whole packs (eggs, paquets); false for kg/L
   confirmed: boolean("confirmed").default(false),
   notes: text("notes"),
 });

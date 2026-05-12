@@ -39,11 +39,32 @@ export default async function DashboardPage() {
   const canoeSubtotal = Number(canoeRow.total ?? 0);
   const rentalCost = canoeSubtotal > 0 ? canoeSubtotal * 1.15 : Number(trip.rentalCost ?? 0);
 
-  const [groceryCostRow] = await db
-    .select({ total: sql<string>`COALESCE(SUM(${schema.groceryItems.cost}), 0)::text` })
+  // Grocery cost: if pack pricing is set, use it; otherwise use manual cost
+  // Compute in JS for clarity (cost is small list)
+  const groceryItemsList = await db
+    .select()
     .from(schema.groceryItems)
     .where(eq(schema.groceryItems.tripId, trip.id));
-  const groceryCost = Number(groceryCostRow.total ?? 0);
+  const menuTotalsForCost = await db
+    .select({ item: schema.menuItems.item, total: sql<number>`SUM(${schema.menuItems.qtyPerPerson} * ${confirmedCount})::numeric::float8` })
+    .from(schema.menuItems)
+    .where(eq(schema.menuItems.tripId, trip.id))
+    .groupBy(schema.menuItems.item);
+  const menuMapForCost = new Map(menuTotalsForCost.map((m) => [m.item, Number(m.total)]));
+  const groceryCost = groceryItemsList.reduce((sum, g) => {
+    const totalRaw = g.source === "menu" && g.matchItem
+      ? (menuMapForCost.get(g.matchItem) ?? 0)
+      : g.source === "fixed" && g.fixedQtyPerPerson
+      ? Number(g.fixedQtyPerPerson) * confirmedCount
+      : 0;
+    const totalWithMargin = totalRaw * Number(g.margin ?? 1.15);
+    if (g.packPrice && g.packSize && Number(g.packSize) > 0) {
+      const packsRaw = totalWithMargin / Number(g.packSize);
+      const packs = g.packRoundUp ? Math.ceil(packsRaw) : packsRaw;
+      return sum + packs * Number(g.packPrice);
+    }
+    return sum + Number(g.cost ?? 0);
+  }, 0);
 
   const [drinksCostRow] = await db
     .select({ total: sql<string>`COALESCE(SUM(${schema.drinks.cost}), 0)::text` })

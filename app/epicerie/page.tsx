@@ -26,6 +26,13 @@ export type EpicerieRow = {
   totalRaw: number;
   totalWithMargin: number;
   toBuy: number;
+  // Pack pricing
+  packLabel: string | null;
+  packSize: string | null;
+  packPrice: string | null;
+  packRoundUp: boolean;
+  packsToBuy: number | null;  // computed
+  effectiveCost: number;       // computed (manual cost OR from packs)
 };
 
 export default async function EpiceriePage() {
@@ -69,13 +76,23 @@ export default async function EpiceriePage() {
     if (g.source === "menu" && g.matchItem) {
       totalRaw = itemTotals.get(g.matchItem) ?? 0;
       const avg = itemAvgPerPerson.get(g.matchItem);
-      qtyPerPersonDisplay = avg ? avg.sum : 0; // total / total-people equivalent shown as "qty pp"
+      qtyPerPersonDisplay = avg ? avg.sum : 0;
     } else if (g.source === "fixed" && g.fixedQtyPerPerson) {
       qtyPerPersonDisplay = Number(g.fixedQtyPerPerson);
       totalRaw = qtyPerPersonDisplay * confirmedCount;
     }
     const totalWithMargin = totalRaw * margin;
     const toBuy = Math.ceil(totalWithMargin);
+
+    // Pack pricing computation
+    let packsToBuy: number | null = null;
+    let effectiveCost = Number(g.cost ?? 0);
+    if (g.packPrice && g.packSize && Number(g.packSize) > 0) {
+      const packsRaw = totalWithMargin / Number(g.packSize);
+      packsToBuy = g.packRoundUp ? Math.ceil(packsRaw) : packsRaw;
+      effectiveCost = packsToBuy * Number(g.packPrice);
+    }
+
     return {
       id: g.id,
       position: g.position,
@@ -95,6 +112,12 @@ export default async function EpiceriePage() {
       totalRaw,
       totalWithMargin,
       toBuy,
+      packLabel: g.packLabel,
+      packSize: g.packSize,
+      packPrice: g.packPrice,
+      packRoundUp: g.packRoundUp ?? true,
+      packsToBuy,
+      effectiveCost,
     };
   });
 
@@ -118,10 +141,16 @@ export default async function EpiceriePage() {
       totalRaw: d.quantity ?? 0,
       totalWithMargin: d.quantity ?? 0,
       toBuy: d.quantity ?? 0,
+      packLabel: null,
+      packSize: null,
+      packPrice: null,
+      packRoundUp: true,
+      packsToBuy: null,
+      effectiveCost: Number(d.cost ?? 0),
     });
   });
 
-  const totalCost = rows.reduce((sum, r) => sum + Number(r.cost ?? 0), 0);
+  const totalCost = rows.reduce((sum, r) => sum + r.effectiveCost, 0);
   const costPerPax = confirmedCount > 0 ? totalCost / confirmedCount : 0;
   const allConfirmed = confirmedCount === totalParticipants;
   const someoneNoArrival = participants.some((p) => p.confirmed === "OUI" && (!p.arrivalMeal || !p.departureMeal));

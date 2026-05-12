@@ -114,38 +114,44 @@ function PriceGrid({
   participants: Participant[];
   currentUserId: number;
 }) {
-  // Group by section for visual breaks but in one table
   const sectionsInOrder = Array.from(new Set(rows.map((r) => r.section)));
-  const grandTotal = rows.reduce((s, r) => s + Number(r.cost ?? 0), 0);
+  const grandTotal = rows.reduce((s, r) => s + r.effectiveCost, 0);
 
   return (
     <div className="bg-card border border-border rounded-2xl overflow-hidden">
+      <div className="bg-sky-50 border-b border-sky-200 px-4 py-2 text-xs text-sky-900">
+        💡 Entre la <strong>taille du pack</strong> dans l'unité du menu (ex: 1000 g pour un kg, 12 unités pour une douzaine) et le <strong>prix du pack</strong>. Le système calcule combien acheter et le coût total.
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 sticky top-0">
             <tr className="text-left border-b border-border">
-              <th className="px-3 py-2 font-semibold">Item</th>
-              <th className="px-3 py-2 font-semibold text-right">Qté</th>
-              <th className="px-3 py-2 font-semibold w-28">Acheteur</th>
-              <th className="px-3 py-2 font-semibold w-28 text-right">Prix estimé</th>
-              <th className="px-3 py-2 font-semibold w-14 text-center">✓</th>
+              <th className="px-2 py-2 font-semibold">Item</th>
+              <th className="px-2 py-2 font-semibold text-right whitespace-nowrap">Besoin</th>
+              <th className="px-2 py-2 font-semibold w-28">Pack</th>
+              <th className="px-2 py-2 font-semibold w-20 text-right">Taille</th>
+              <th className="px-2 py-2 font-semibold w-20 text-right">Prix/pack</th>
+              <th className="px-2 py-2 font-semibold w-24 text-right">À acheter</th>
+              <th className="px-2 py-2 font-semibold w-20 text-right">Total</th>
+              <th className="px-2 py-2 font-semibold w-24">Acheteur</th>
+              <th className="px-2 py-2 font-semibold w-10 text-center">✓</th>
             </tr>
           </thead>
           <tbody>
             {sectionsInOrder.map((section) => {
               const sectionRows = rows.filter((r) => r.section === section);
               const meta = SECTION_META[section] ?? { color: "", emoji: "📦" };
-              const sectionTotal = sectionRows.reduce((s, r) => s + Number(r.cost ?? 0), 0);
+              const sectionTotal = sectionRows.reduce((s, r) => s + r.effectiveCost, 0);
               return (
                 <>
                   <tr key={`hdr-${section}`} className="bg-slate-100/50">
-                    <td colSpan={3} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                    <td colSpan={6} className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
                       {meta.emoji} {section}
                     </td>
-                    <td className="px-3 py-1.5 text-xs text-right text-muted tabular-nums">
+                    <td className="px-2 py-1.5 text-xs text-right text-muted tabular-nums">
                       {sectionTotal > 0 && formatCurrency(sectionTotal)}
                     </td>
-                    <td></td>
+                    <td colSpan={2}></td>
                   </tr>
                   {sectionRows.map((row) => (
                     <GridRow key={row.id} row={row} participants={participants} currentUserId={currentUserId} />
@@ -154,46 +160,132 @@ function PriceGrid({
               );
             })}
             <tr className="bg-emerald-50 border-t-2 border-emerald-200 font-bold">
-              <td colSpan={3} className="px-3 py-2 text-right">TOTAL</td>
-              <td className="px-3 py-2 text-right tabular-nums text-emerald-800">{formatCurrency(grandTotal)}</td>
-              <td></td>
+              <td colSpan={6} className="px-2 py-2 text-right">TOTAL</td>
+              <td className="px-2 py-2 text-right tabular-nums text-emerald-800">{formatCurrency(grandTotal)}</td>
+              <td colSpan={2}></td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-muted px-3 py-2 border-t border-border bg-slate-50">
-        💡 Tab pour passer au champ suivant. Enter ou clic ailleurs pour sauver. Le total se met à jour automatiquement.
-      </p>
     </div>
   );
 }
 
 function GridRow({ row, participants, currentUserId }: { row: EpicerieRow; participants: Participant[]; currentUserId: number }) {
-  const [cost, setCost] = useState(row.cost ?? "");
+  const [packLabel, setPackLabel] = useState(row.packLabel ?? "");
+  const [packSize, setPackSize] = useState(row.packSize ?? "");
+  const [packPrice, setPackPrice] = useState(row.packPrice ?? "");
+  const [packRoundUp, setPackRoundUp] = useState(row.packRoundUp);
   const [buyerId, setBuyerId] = useState(row.buyerId);
   const [confirmed, setConfirmed] = useState(row.confirmed ?? false);
   const [, startTransition] = useTransition();
   const isDrink = row.source === "drink";
   const realId = isDrink ? row.id - 1000000 : row.id;
 
-  const save = (data: { buyerId?: number | null; cost?: string | null; confirmed?: boolean }) => {
+  const save = (data: Parameters<typeof updateGroceryItem>[1]) => {
     startTransition(() => {
-      if (isDrink) updateDrink(realId, data);
-      else updateGroceryItem(realId, data);
+      if (isDrink) {
+        // drinks don't support pack pricing — only ownerId+confirmed+cost
+        updateDrink(realId, {
+          ownerId: data.buyerId,
+          confirmed: data.confirmed,
+          cost: data.cost,
+        });
+      } else {
+        updateGroceryItem(realId, data);
+      }
     });
   };
 
-  const buyer = buyerId ? participants.find((p) => p.id === buyerId) : null;
-  const displayQty = row.source === "note" ? row.fixedText : `${row.toBuy} ${row.unit ?? ""}`;
+  const displayBesoin = row.source === "note"
+    ? row.fixedText
+    : `${row.toBuy} ${row.unit ?? ""}`;
+
+  // Compute on the fly for live preview
+  const sizeNum = Number(packSize);
+  const priceNum = Number(packPrice);
+  let packsRaw: number | null = null;
+  let packsToBuy: number | null = null;
+  let computedTotal: number | null = null;
+  if (sizeNum > 0 && priceNum > 0) {
+    packsRaw = row.totalWithMargin / sizeNum;
+    packsToBuy = packRoundUp ? Math.ceil(packsRaw) : Math.round(packsRaw * 100) / 100;
+    computedTotal = packsToBuy * priceNum;
+  }
 
   return (
     <tr className={`border-b border-border ${confirmed ? "bg-emerald-50/40" : ""}`}>
-      <td className="px-3 py-1.5">
+      <td className="px-2 py-1.5">
         <div className={`font-medium text-sm ${confirmed ? "line-through opacity-60" : ""}`}>{row.name}</div>
         {row.notes && <div className="text-xs text-muted">{row.notes}</div>}
       </td>
-      <td className="px-3 py-1.5 text-right text-xs tabular-nums whitespace-nowrap">{displayQty}</td>
-      <td className="px-3 py-1.5">
+      <td className="px-2 py-1.5 text-right text-xs tabular-nums whitespace-nowrap text-muted">{displayBesoin}</td>
+
+      {/* Pack label */}
+      <td className="px-2 py-1.5">
+        <input
+          type="text"
+          value={packLabel}
+          onChange={(e) => setPackLabel(e.target.value)}
+          onBlur={() => save({ packLabel: packLabel || null })}
+          placeholder="kg, dz…"
+          disabled={isDrink || row.source === "note"}
+          className="w-full px-1.5 py-1 text-xs border border-border rounded-md bg-white disabled:bg-slate-50"
+        />
+      </td>
+
+      {/* Pack size */}
+      <td className="px-2 py-1.5">
+        <input
+          type="number" step="0.01"
+          value={packSize ?? ""}
+          onChange={(e) => setPackSize(e.target.value)}
+          onBlur={() => save({ packSize: packSize === "" ? null : packSize })}
+          placeholder={row.unit ?? "—"}
+          disabled={isDrink || row.source === "note"}
+          className="w-full px-1.5 py-1 text-xs border border-border rounded-md text-right bg-white disabled:bg-slate-50"
+        />
+      </td>
+
+      {/* Pack price */}
+      <td className="px-2 py-1.5">
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted">$</span>
+          <input
+            type="number" step="0.01"
+            value={packPrice ?? ""}
+            onChange={(e) => setPackPrice(e.target.value)}
+            onBlur={() => save({ packPrice: packPrice === "" ? null : packPrice })}
+            placeholder="—"
+            disabled={isDrink || row.source === "note"}
+            className="flex-1 min-w-0 px-1.5 py-1 text-sm border border-border rounded-md text-right bg-white disabled:bg-slate-50"
+          />
+        </div>
+      </td>
+
+      {/* À acheter */}
+      <td className="px-2 py-1.5 text-right text-xs tabular-nums whitespace-nowrap">
+        {packsToBuy !== null && (
+          <span className="flex items-center justify-end gap-1">
+            <span className="font-semibold">{packRoundUp ? packsToBuy : packsToBuy.toFixed(2)}</span>
+            <span className="text-muted">{packLabel}</span>
+            <button
+              onClick={() => { const v = !packRoundUp; setPackRoundUp(v); save({ packRoundUp: v }); }}
+              className={`ml-0.5 text-[10px] px-1 py-0.5 rounded ${packRoundUp ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}
+              title={packRoundUp ? "Mode 'arrondit aux paquets entiers'. Clique pour passer en continu (kg, L)." : "Mode 'continu' (achète exactement la quantité). Clique pour arrondir."}
+            >
+              {packRoundUp ? "⤴ entier" : "≈ continu"}
+            </button>
+          </span>
+        )}
+      </td>
+
+      {/* Total */}
+      <td className="px-2 py-1.5 text-right text-sm tabular-nums font-semibold whitespace-nowrap">
+        {computedTotal !== null ? formatCurrency(computedTotal) : (row.cost ? formatCurrency(Number(row.cost)) : "—")}
+      </td>
+
+      <td className="px-2 py-1.5">
         <select
           value={buyerId ?? ""}
           onChange={(e) => {
@@ -210,23 +302,8 @@ function GridRow({ row, participants, currentUserId }: { row: EpicerieRow; parti
           ))}
         </select>
       </td>
-      <td className="px-3 py-1.5">
-        <div className="flex items-center gap-1 justify-end">
-          <span className="text-xs text-muted">$</span>
-          <input
-            type="number"
-            step="0.01"
-            value={cost ?? ""}
-            onChange={(e) => setCost(e.target.value)}
-            onBlur={() => save({ cost: cost === "" ? null : cost })}
-            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-            placeholder="—"
-            disabled={!buyer && row.source !== "note"}
-            className="w-20 px-1.5 py-1 text-sm border border-border rounded-md text-right bg-white disabled:bg-slate-50 disabled:cursor-not-allowed"
-          />
-        </div>
-      </td>
-      <td className="px-3 py-1.5 text-center">
+
+      <td className="px-2 py-1.5 text-center">
         <button
           onClick={() => { const v = !confirmed; setConfirmed(v); save({ confirmed: v }); }}
           className={`w-5 h-5 rounded border-2 inline-flex items-center justify-center transition ${

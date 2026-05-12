@@ -111,9 +111,14 @@ export async function updateGroceryItem(id: number, data: {
   cost?: string | null;
   confirmed?: boolean;
   notes?: string;
+  packLabel?: string | null;
+  packSize?: string | null;
+  packPrice?: string | null;
+  packRoundUp?: boolean;
 }) {
   await db.update(schema.groceryItems).set(data).where(eq(schema.groceryItems.id, id));
   revalidatePath("/epicerie");
+  revalidatePath("/");
 }
 
 export async function bulkAssignGrocerySection(
