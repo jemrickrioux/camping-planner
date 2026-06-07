@@ -1,7 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { getCurrentTrip, getConfirmedCount, getParticipants } from "@/lib/trip";
-import { getCurrentParticipant, isOrganizerSession } from "@/lib/auth";
-import { splitCosts, personalShare } from "@/lib/cost";
+import { isOrganizerSession } from "@/lib/auth";
 import { eq, sql } from "drizzle-orm";
 import Link from "next/link";
 import { Countdown } from "@/components/countdown";
@@ -20,7 +19,6 @@ export default async function DashboardPage() {
   const totalParticipants = participants.length;
   const allConfirmed = confirmedCount === totalParticipants;
   const isOrganizer = await isOrganizerSession();
-  const me = await getCurrentParticipant();
 
   const [communSansOwner] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -43,47 +41,8 @@ export default async function DashboardPage() {
   const canoeSubtotal = Number(canoeRow.total ?? 0);
   const rentalCost = canoeSubtotal > 0 ? canoeSubtotal * 1.15 : Number(trip.rentalCost ?? 0);
 
-  // Grocery cost: if pack pricing is set, use it; otherwise use manual cost
-  // Compute in JS for clarity (cost is small list)
-  const groceryItemsList = await db
-    .select()
-    .from(schema.groceryItems)
-    .where(eq(schema.groceryItems.tripId, trip.id));
-  const menuTotalsForCost = await db
-    .select({ item: schema.menuItems.item, total: sql<number>`SUM(${schema.menuItems.qtyPerPerson} * ${confirmedCount})::numeric::float8` })
-    .from(schema.menuItems)
-    .where(eq(schema.menuItems.tripId, trip.id))
-    .groupBy(schema.menuItems.item);
-  const menuMapForCost = new Map(menuTotalsForCost.map((m) => [m.item, Number(m.total)]));
-  const groceryCost = groceryItemsList.reduce((sum, g) => {
-    const totalRaw = g.source === "menu" && g.matchItem
-      ? (menuMapForCost.get(g.matchItem) ?? 0)
-      : g.source === "fixed" && g.fixedQtyPerPerson
-      ? Number(g.fixedQtyPerPerson) * confirmedCount
-      : 0;
-    const totalWithMargin = totalRaw * Number(g.margin ?? 1.15);
-    if (g.packPrice && g.packSize && Number(g.packSize) > 0) {
-      const packsRaw = totalWithMargin / Number(g.packSize);
-      const packs = g.packRoundUp ? Math.ceil(packsRaw) : packsRaw;
-      return sum + packs * Number(g.packPrice);
-    }
-    return sum + Number(g.cost ?? 0);
-  }, 0);
-
-  const [drinksCostRow] = await db
-    .select({ total: sql<string>`COALESCE(SUM(${schema.drinks.cost}), 0)::text` })
-    .from(schema.drinks)
-    .where(eq(schema.drinks.tripId, trip.id));
-  const drinksCost = Number(drinksCostRow.total ?? 0);
-
-  const totalCost = siteCost + rentalCost + groceryCost + drinksCost;
-  const split = splitCosts({
-    participants,
-    fixedCost: siteCost + rentalCost,
-    groceryCost,
-    alcoholCost: drinksCost,
-  });
-  const myShare = me ? personalShare(split, me.drinksAlcohol) : null;
+  const totalCost = siteCost + rentalCost;
+  const costPerPaxIfAll = totalParticipants > 0 ? totalCost / totalParticipants : 0;
 
   return (
     <div className="space-y-6">
@@ -115,28 +74,20 @@ export default async function DashboardPage() {
             <>
               <ActionCard href="/canots" emoji="🛶" label="Canots" desc="Location + placement" bg="from-teal-50 to-cyan-50" />
               <ActionCard href="/stock-commun" emoji="📦" label="Stock commun" desc={`${communSansOwner.count ?? 0} sans owner`} bg="from-rose-50 to-pink-50" badge={communSansOwner.count ?? 0} />
-              <ActionCard href="/epicerie" emoji="🛒" label="Épicerie & Boissons" desc="Liste + prix" bg="from-emerald-50 to-teal-50" />
             </>
           )}
         </div>
       </section>
 
-      {/* COÛTS — adaptatif */}
+      {/* COÛTS — site + canots seulement */}
       <CostsBlock
         siteCost={siteCost}
         rentalCost={rentalCost}
-        groceryCost={groceryCost}
-        drinksCost={drinksCost}
         totalCost={totalCost}
+        costPerPaxIfAll={costPerPaxIfAll}
         confirmedCount={confirmedCount}
         totalParticipants={totalParticipants}
         allConfirmed={allConfirmed}
-        perDrinker={split.perDrinker}
-        perNonDrinker={split.perNonDrinker}
-        alcoholDrinkersCount={split.alcoholDrinkersCount}
-        myShare={myShare}
-        meName={me?.name.split(" ")[0] ?? null}
-        meDrinksAlcohol={me?.drinksAlcohol ?? null}
       />
 
       {/* INFO PRATIQUE — editable for organizer */}
@@ -180,8 +131,8 @@ function ConfirmationsBlock({ participants, confirmedCount }: { participants: Aw
           </div>
           <div className="text-sm opacity-80">
             {allConfirmed
-              ? "On peut finaliser bouffe et lifts."
-              : "Le coût par personne et la planif bouffe se précisent au fur et à mesure."}
+              ? "On peut finaliser les lifts."
+              : "Le coût par personne se précise au fur et à mesure."}
           </div>
         </div>
         <div className="text-3xl font-bold tabular-nums">{pct}%</div>
@@ -215,65 +166,39 @@ function ConfirmationsBlock({ participants, confirmedCount }: { participants: Aw
 }
 
 function CostsBlock({
-  siteCost, rentalCost, groceryCost, drinksCost, totalCost,
+  siteCost, rentalCost, totalCost, costPerPaxIfAll,
   confirmedCount, totalParticipants, allConfirmed,
-  perDrinker, perNonDrinker, alcoholDrinkersCount, myShare, meName, meDrinksAlcohol,
 }: {
-  siteCost: number; rentalCost: number; groceryCost: number; drinksCost: number; totalCost: number;
+  siteCost: number; rentalCost: number; totalCost: number; costPerPaxIfAll: number;
   confirmedCount: number; totalParticipants: number; allConfirmed: boolean;
-  perDrinker: number; perNonDrinker: number; alcoholDrinkersCount: number;
-  myShare: number | null; meName: string | null; meDrinksAlcohol: boolean | null;
 }) {
-  const hasMixedAlcohol = alcoholDrinkersCount > 0 && alcoholDrinkersCount < confirmedCount;
-  const nonDrinkersCount = confirmedCount - alcoholDrinkersCount;
-
   return (
     <section>
       <h2 className="text-base font-semibold mb-3 text-muted">💰 Coûts</h2>
       <div className="bg-card rounded-2xl border border-border p-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 gap-3 mb-4">
           <CostItem label="Site (3 nuits)" value={siteCost} fixed />
           <CostItem label="Canots" value={rentalCost} fixed />
-          <CostItem label="Épicerie" value={groceryCost} placeholder="À remplir" />
-          <CostItem label="Boissons" value={drinksCost} placeholder="À remplir" />
         </div>
         <div className="border-t border-border pt-3 space-y-2">
           <div className="flex justify-between items-baseline gap-3">
             <span className="text-sm text-muted">Total</span>
             <span className="text-2xl font-bold tabular-nums">{formatCurrency(totalCost)}</span>
           </div>
-
-          {!allConfirmed && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
-              ⏳ {confirmedCount}/{totalParticipants} confirmés — coût final calculé quand tous ont confirmé.
+          {allConfirmed ? (
+            <div className="flex justify-between items-baseline gap-3">
+              <span className="text-sm text-muted">/ personne ({totalParticipants})</span>
+              <span className="text-lg font-bold text-primary">{formatCurrency(costPerPaxIfAll)}</span>
             </div>
-          )}
-
-          {myShare !== null && (
-            <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex justify-between items-baseline">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-teal-700">Ta part, {meName}</div>
-                <div className="text-xs text-muted">{meDrinksAlcohol ? "🍻 avec alcool" : "🚫🍺 sans alcool"}</div>
+          ) : (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
+              <div className="font-semibold text-amber-900 mb-1">
+                ⏳ {confirmedCount}/{totalParticipants} confirmés — coût final calculé quand tous ont confirmé.
               </div>
-              <span className="text-xl font-bold tabular-nums text-teal-900">{formatCurrency(myShare)}</span>
+              <div className="text-amber-800">
+                Estimé si tous viennent ({totalParticipants} pers) : <strong>{formatCurrency(costPerPaxIfAll)}</strong> / pers
+              </div>
             </div>
-          )}
-
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="bg-slate-50 rounded-lg p-2">
-              <div className="text-xs text-muted">🍻 Avec alcool ({alcoholDrinkersCount})</div>
-              <div className="font-semibold tabular-nums">{formatCurrency(perDrinker)}</div>
-            </div>
-            <div className="bg-slate-50 rounded-lg p-2">
-              <div className="text-xs text-muted">🚫🍺 Sans alcool ({nonDrinkersCount})</div>
-              <div className="font-semibold tabular-nums">{formatCurrency(perNonDrinker)}</div>
-            </div>
-          </div>
-
-          {hasMixedAlcohol && (
-            <p className="text-xs text-muted">
-              Bouffe partagée sur {confirmedCount} pers, alcool partagé sur {alcoholDrinkersCount} buveurs.
-            </p>
           )}
         </div>
       </div>
@@ -304,24 +229,6 @@ function ActionCard({ href, emoji, label, desc, bg, badge }: { href: string; emo
         </span>
       )}
     </Link>
-  );
-}
-
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="bg-card rounded-2xl border border-border p-4 shadow-sm">
-      <h3 className="font-semibold mb-3 text-sm">{title}</h3>
-      <div className="space-y-2 text-sm">{children}</div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex justify-between gap-3 items-start">
-      <span className="text-muted shrink-0">{label}</span>
-      <span className="text-right font-medium">{value}</span>
-    </div>
   );
 }
 
