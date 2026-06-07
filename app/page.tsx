@@ -1,16 +1,12 @@
 import { db, schema } from "@/lib/db";
 import { getCurrentTrip, getConfirmedCount, getParticipants } from "@/lib/trip";
 import { isOrganizerSession } from "@/lib/auth";
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import Link from "next/link";
 import { Countdown } from "@/components/countdown";
 import { TripInfoCards } from "./trip-info-cards";
 
 export const dynamic = "force-dynamic";
-
-function formatCurrency(n: number) {
-  return new Intl.NumberFormat("fr-CA", { style: "currency", currency: "CAD" }).format(n);
-}
 
 export default async function DashboardPage() {
   const trip = await getCurrentTrip();
@@ -30,19 +26,6 @@ export default async function DashboardPage() {
     .from(schema.todos)
     .where(sql`${schema.todos.tripId} = ${trip.id} AND ${schema.todos.status} != 'Fait'`);
 
-  const siteCost = Number(trip.siteCost ?? 0);
-  // Compute canoe rental cost from the /canots tab (with taxes)
-  const [canoeRow] = await db
-    .select({
-      total: sql<string>`COALESCE(SUM(${schema.canoes.dailyRate} * ${schema.canoes.days}), 0)::text`,
-    })
-    .from(schema.canoes)
-    .where(eq(schema.canoes.tripId, trip.id));
-  const canoeSubtotal = Number(canoeRow.total ?? 0);
-  const rentalCost = canoeSubtotal > 0 ? canoeSubtotal * 1.15 : Number(trip.rentalCost ?? 0);
-
-  const totalCost = siteCost + rentalCost;
-  const costPerPaxIfAll = totalParticipants > 0 ? totalCost / totalParticipants : 0;
 
   return (
     <div className="space-y-6">
@@ -79,16 +62,14 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* COÛTS — site + canots seulement */}
-      <CostsBlock
-        siteCost={siteCost}
-        rentalCost={rentalCost}
-        totalCost={totalCost}
-        costPerPaxIfAll={costPerPaxIfAll}
-        confirmedCount={confirmedCount}
-        totalParticipants={totalParticipants}
-        allConfirmed={allConfirmed}
-      />
+      {/* COÛT — cadeau */}
+      <section>
+        <h2 className="text-base font-semibold mb-3 text-muted">💰 Coût</h2>
+        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 text-center">
+          <div className="text-4xl font-bold tabular-nums text-emerald-900">0 $</div>
+          <div className="text-sm text-emerald-800 mt-1">Thanks for joining the group :)</div>
+        </div>
+      </section>
 
       {/* INFO PRATIQUE — editable for organizer */}
       <TripInfoCards trip={trip} />
@@ -165,47 +146,6 @@ function ConfirmationsBlock({ participants, confirmedCount }: { participants: Aw
   );
 }
 
-function CostsBlock({
-  siteCost, rentalCost, totalCost, costPerPaxIfAll,
-  confirmedCount, totalParticipants, allConfirmed,
-}: {
-  siteCost: number; rentalCost: number; totalCost: number; costPerPaxIfAll: number;
-  confirmedCount: number; totalParticipants: number; allConfirmed: boolean;
-}) {
-  return (
-    <section>
-      <h2 className="text-base font-semibold mb-3 text-muted">💰 Coûts</h2>
-      <div className="bg-card rounded-2xl border border-border p-4">
-        <div className="grid grid-cols-2 gap-3 mb-4">
-          <CostItem label="Site (3 nuits)" value={siteCost} fixed />
-          <CostItem label="Canots" value={rentalCost} fixed />
-        </div>
-        <div className="border-t border-border pt-3 space-y-2">
-          <div className="flex justify-between items-baseline gap-3">
-            <span className="text-sm text-muted">Total</span>
-            <span className="text-2xl font-bold tabular-nums">{formatCurrency(totalCost)}</span>
-          </div>
-          {allConfirmed ? (
-            <div className="flex justify-between items-baseline gap-3">
-              <span className="text-sm text-muted">/ personne ({totalParticipants})</span>
-              <span className="text-lg font-bold text-primary">{formatCurrency(costPerPaxIfAll)}</span>
-            </div>
-          ) : (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
-              <div className="font-semibold text-amber-900 mb-1">
-                ⏳ {confirmedCount}/{totalParticipants} confirmés — coût final calculé quand tous ont confirmé.
-              </div>
-              <div className="text-amber-800">
-                Estimé si tous viennent ({totalParticipants} pers) : <strong>{formatCurrency(costPerPaxIfAll)}</strong> / pers
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Pill({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/15 backdrop-blur-sm border border-white/20 text-sm">
@@ -232,20 +172,3 @@ function ActionCard({ href, emoji, label, desc, bg, badge }: { href: string; emo
   );
 }
 
-function CostItem({ label, value, placeholder, fixed }: { label: string; value: number; placeholder?: string; fixed?: boolean }) {
-  return (
-    <div>
-      <div className="text-xs uppercase tracking-wide text-muted flex items-center gap-1">
-        {label}
-        {fixed && <span title="Coût fixe">📌</span>}
-      </div>
-      <div className="text-lg font-semibold mt-1">
-        {value === 0 && placeholder ? (
-          <span className="text-muted text-sm font-normal">{placeholder}</span>
-        ) : (
-          formatCurrency(value)
-        )}
-      </div>
-    </div>
-  );
-}
