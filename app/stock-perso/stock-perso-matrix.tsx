@@ -1,16 +1,29 @@
 "use client";
 
 import { useTransition, useState, useMemo } from "react";
-import type { Participant, PersoStockItem } from "@/db/schema";
-import { togglePersoStockCheck } from "@/app/actions";
-import { useWhoAmI } from "@/components/who-am-i";
-import { Avatar } from "@/components/who-am-i";
+import type { Participant, PersoStockItem, PersoStatus } from "@/db/schema";
+import { PERSO_STATUSES } from "@/db/schema";
+import { setPersoStockStatus } from "@/app/actions";
+import { useWhoAmI, Avatar } from "@/components/who-am-i";
 
 type Check = {
   participantId: number;
   persoStockItemId: number;
   hasIt: boolean;
+  status: string;
 };
+
+const isStatus = (s: string): s is PersoStatus =>
+  (PERSO_STATUSES as readonly string[]).includes(s);
+
+const STATUS_META: Record<PersoStatus, { label: string; emoji: string; color: string; ring: string }> = {
+  to_buy:   { label: "À acheter",     emoji: "🛒", color: "bg-rose-100 text-rose-800 border-rose-300",           ring: "ring-rose-400" },
+  owned:    { label: "Détenu",        emoji: "📦", color: "bg-amber-100 text-amber-800 border-amber-300",        ring: "ring-amber-400" },
+  packed:   { label: "Dans mon sac",  emoji: "🎒", color: "bg-emerald-100 text-emerald-800 border-emerald-300",  ring: "ring-emerald-400" },
+  ignored:  { label: "Ignorer",       emoji: "⏭️", color: "bg-slate-100 text-slate-600 border-slate-300",         ring: "ring-slate-400" },
+};
+
+const ORDER: PersoStatus[] = ["to_buy", "owned", "packed", "ignored"];
 
 export function StockPersoMatrix({
   items,
@@ -21,42 +34,57 @@ export function StockPersoMatrix({
   participants: Participant[];
   checks: Check[];
 }) {
-  const { participantId, participant } = useWhoAmI();
-  const [optimistic, setOptimistic] = useState<Record<string, boolean>>({});
+  const { participantId } = useWhoAmI();
+  const [optimistic, setOptimistic] = useState<Record<string, PersoStatus>>({});
 
   const checkKey = (pid: number, iid: number) => `${pid}-${iid}`;
 
   const initialMap = useMemo(() => {
-    const m = new Map<string, boolean>();
-    checks.forEach((c) => m.set(checkKey(c.participantId, c.persoStockItemId), c.hasIt));
+    const m = new Map<string, PersoStatus>();
+    checks.forEach((c) => {
+      const s = isStatus(c.status) ? c.status : "to_buy";
+      m.set(checkKey(c.participantId, c.persoStockItemId), s);
+    });
     return m;
   }, [checks]);
 
-  const isChecked = (pid: number, iid: number) => {
+  const getStatus = (pid: number, iid: number): PersoStatus => {
     const k = checkKey(pid, iid);
     if (k in optimistic) return optimistic[k];
-    return initialMap.get(k) ?? false;
+    return initialMap.get(k) ?? "to_buy";
   };
 
-  const myChecked = items.filter((i) => isChecked(participantId!, i.id)).length;
-  const myProgress = items.length === 0 ? 0 : Math.round((myChecked / items.length) * 100);
+  const myItems = items.map((i) => ({ item: i, status: getStatus(participantId!, i.id) }));
+  const activeItems = myItems.filter((x) => x.status !== "ignored");
+  const packedCount = myItems.filter((x) => x.status === "packed").length;
+  const ownedCount = myItems.filter((x) => x.status === "owned").length;
+  const toBuyCount = myItems.filter((x) => x.status === "to_buy").length;
+  const ignoredCount = myItems.filter((x) => x.status === "ignored").length;
 
-  const totalChecked = (iid: number) =>
-    participants.filter((p) => isChecked(p.id, iid)).length;
+  const denominator = activeItems.length;
+  const readyPct = denominator === 0 ? 0 : Math.round((packedCount / denominator) * 100);
+
+  const onChange = (iid: number, newStatus: PersoStatus) => {
+    const k = checkKey(participantId!, iid);
+    setOptimistic((o) => ({ ...o, [k]: newStatus }));
+  };
 
   return (
     <div className="space-y-4">
-      {/* Hero progress card */}
+      {/* Hero progress */}
       <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 rounded-3xl p-5">
         <div className="flex items-center gap-4">
-          <ProgressRing pct={myProgress} size={84} stroke={8} />
+          <ProgressRing pct={readyPct} size={84} stroke={8} />
           <div className="flex-1">
             <div className="text-sm text-muted">Ta liste</div>
             <div className="text-2xl font-bold">
-              {myChecked} / {items.length} items prêts
+              {packedCount} / {denominator} dans ton sac
             </div>
-            <div className="text-sm text-muted mt-1">
-              {myProgress < 100 ? `Encore ${items.length - myChecked} à cocher` : "Tu es prêt 🎉"}
+            <div className="flex flex-wrap gap-1.5 mt-2 text-xs">
+              {toBuyCount > 0 && <Chip status="to_buy" count={toBuyCount} />}
+              {ownedCount > 0 && <Chip status="owned" count={ownedCount} />}
+              {packedCount > 0 && <Chip status="packed" count={packedCount} />}
+              {ignoredCount > 0 && <Chip status="ignored" count={ignoredCount} />}
             </div>
           </div>
         </div>
@@ -66,27 +94,16 @@ export function StockPersoMatrix({
       <div className="space-y-2">
         <h2 className="text-sm font-semibold text-muted uppercase tracking-wide">🎒 Ma liste</h2>
         <ul className="space-y-2">
-          {items.map((item) => {
-            const checked = isChecked(participantId!, item.id);
-            const total = totalChecked(item.id);
-            const allChecked = total === participants.length;
-            return (
-              <li key={item.id}>
-                <ItemRow
-                  item={item}
-                  checked={checked}
-                  total={total}
-                  totalCount={participants.length}
-                  onToggle={(newVal) => {
-                    const k = checkKey(participantId!, item.id);
-                    setOptimistic((o) => ({ ...o, [k]: newVal }));
-                  }}
-                  participantId={participantId!}
-                  allChecked={allChecked}
-                />
-              </li>
-            );
-          })}
+          {items.map((item) => (
+            <li key={item.id}>
+              <ItemRow
+                item={item}
+                status={getStatus(participantId!, item.id)}
+                onChange={(s) => onChange(item.id, s)}
+                participantId={participantId!}
+              />
+            </li>
+          ))}
         </ul>
       </div>
 
@@ -94,12 +111,13 @@ export function StockPersoMatrix({
       <details className="bg-card rounded-2xl border border-border overflow-hidden">
         <summary className="px-4 py-3 font-semibold cursor-pointer flex items-center justify-between">
           <span>👥 Statut du groupe</span>
-          <span className="text-sm text-muted font-normal">Voir qui a coché quoi</span>
+          <span className="text-sm text-muted font-normal">Qui a packé quoi</span>
         </summary>
         <div className="p-4 pt-2 space-y-2">
           {participants.map((p) => {
-            const pChecked = items.filter((i) => isChecked(p.id, i.id)).length;
-            const pPct = items.length === 0 ? 0 : Math.round((pChecked / items.length) * 100);
+            const pPacked = items.filter((i) => getStatus(p.id, i.id) === "packed").length;
+            const pActive = items.filter((i) => getStatus(p.id, i.id) !== "ignored").length;
+            const pPct = pActive === 0 ? 0 : Math.round((pPacked / pActive) * 100);
             const isMe = p.id === participantId;
             return (
               <div key={p.id} className={`flex items-center gap-3 p-2 rounded-xl ${isMe ? "bg-teal-50" : ""}`}>
@@ -115,7 +133,7 @@ export function StockPersoMatrix({
                     />
                   </div>
                 </div>
-                <div className="text-sm font-semibold tabular-nums text-muted">{pChecked}/{items.length}</div>
+                <div className="text-sm font-semibold tabular-nums text-muted">{pPacked}/{pActive}</div>
               </div>
             );
           })}
@@ -126,53 +144,68 @@ export function StockPersoMatrix({
 }
 
 function ItemRow({
-  item, checked, total, totalCount, onToggle, participantId, allChecked,
+  item, status, onChange, participantId,
 }: {
   item: PersoStockItem;
-  checked: boolean;
-  total: number;
-  totalCount: number;
-  onToggle: (val: boolean) => void;
+  status: PersoStatus;
+  onChange: (s: PersoStatus) => void;
   participantId: number;
-  allChecked: boolean;
 }) {
   const [pending, startTransition] = useTransition();
+  const meta = STATUS_META[status];
+  const dim = status === "ignored";
 
-  const handleClick = () => {
-    const newVal = !checked;
-    onToggle(newVal);
+  const setStatus = (s: PersoStatus) => {
+    onChange(s);
     startTransition(() => {
-      togglePersoStockCheck(participantId, item.id, newVal);
+      setPersoStockStatus(participantId, item.id, s);
     });
   };
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={pending}
-      className={`w-full flex items-center gap-3 p-3 rounded-2xl border-2 text-left transition group ${
-        checked
-          ? "bg-teal-50 border-teal-200"
-          : "bg-card border-border hover:border-teal-300"
-      } ${pending ? "opacity-60" : ""}`}
+    <div
+      className={`p-3 rounded-2xl border-2 transition ${meta.color} ${pending ? "opacity-60" : ""} ${dim ? "opacity-70" : ""}`}
     >
-      <div
-        className={`w-7 h-7 rounded-full border-2 flex items-center justify-center shrink-0 transition ${
-          checked ? "bg-teal-500 border-teal-600 text-white" : "bg-white border-slate-300"
-        }`}
-      >
-        {checked && <span className="text-sm">✓</span>}
+      <div className="flex items-start gap-3 mb-2">
+        <span className="text-2xl shrink-0" aria-hidden>{meta.emoji}</span>
+        <div className="flex-1 min-w-0">
+          <div className={`font-medium ${dim ? "line-through" : ""}`}>{item.name}</div>
+          {item.notes && <div className="text-xs text-muted mt-0.5">{item.notes}</div>}
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <div className={`font-medium ${checked ? "" : ""}`}>{item.name}</div>
-        {item.notes && <div className="text-xs text-muted mt-0.5">{item.notes}</div>}
+      <div className="grid grid-cols-4 gap-1">
+        {ORDER.map((s) => {
+          const sMeta = STATUS_META[s];
+          const active = s === status;
+          return (
+            <button
+              key={s}
+              onClick={() => setStatus(s)}
+              disabled={pending}
+              className={`flex flex-col items-center gap-0.5 py-1.5 px-1 rounded-lg text-[10px] font-medium transition border ${
+                active
+                  ? `${sMeta.color} ring-2 ${sMeta.ring} border-transparent`
+                  : "bg-white/70 border-white text-slate-600 hover:bg-white"
+              }`}
+              aria-pressed={active}
+            >
+              <span className="text-base leading-none" aria-hidden>{sMeta.emoji}</span>
+              <span className="leading-tight text-center">{sMeta.label}</span>
+            </button>
+          );
+        })}
       </div>
-      <div className={`text-xs px-2 py-1 rounded-full shrink-0 ${
-        allChecked ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-      }`}>
-        {total}/{totalCount}
-      </div>
-    </button>
+    </div>
+  );
+}
+
+function Chip({ status, count }: { status: PersoStatus; count: number }) {
+  const meta = STATUS_META[status];
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border ${meta.color}`}>
+      <span aria-hidden>{meta.emoji}</span>
+      <span>{count} {meta.label}</span>
+    </span>
   );
 }
 

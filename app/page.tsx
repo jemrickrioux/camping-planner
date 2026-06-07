@@ -1,6 +1,7 @@
 import { db, schema } from "@/lib/db";
 import { getCurrentTrip, getConfirmedCount, getParticipants } from "@/lib/trip";
-import { isOrganizerSession } from "@/lib/auth";
+import { getCurrentParticipant, isOrganizerSession } from "@/lib/auth";
+import { splitCosts, personalShare } from "@/lib/cost";
 import { eq, sql } from "drizzle-orm";
 import Link from "next/link";
 import { Countdown } from "@/components/countdown";
@@ -19,6 +20,7 @@ export default async function DashboardPage() {
   const totalParticipants = participants.length;
   const allConfirmed = confirmedCount === totalParticipants;
   const isOrganizer = await isOrganizerSession();
+  const me = await getCurrentParticipant();
 
   const [communSansOwner] = await db
     .select({ count: sql<number>`count(*)::int` })
@@ -75,6 +77,13 @@ export default async function DashboardPage() {
   const drinksCost = Number(drinksCostRow.total ?? 0);
 
   const totalCost = siteCost + rentalCost + groceryCost + drinksCost;
+  const split = splitCosts({
+    participants,
+    fixedCost: siteCost + rentalCost,
+    groceryCost,
+    alcoholCost: drinksCost,
+  });
+  const myShare = me ? personalShare(split, me.drinksAlcohol) : null;
 
   return (
     <div className="space-y-6">
@@ -106,8 +115,7 @@ export default async function DashboardPage() {
             <>
               <ActionCard href="/canots" emoji="🛶" label="Canots" desc="Location + placement" bg="from-teal-50 to-cyan-50" />
               <ActionCard href="/stock-commun" emoji="📦" label="Stock commun" desc={`${communSansOwner.count ?? 0} sans owner`} bg="from-rose-50 to-pink-50" badge={communSansOwner.count ?? 0} />
-              <ActionCard href="/epicerie" emoji="🛒" label="Épicerie" desc="Groupes d'achat" bg="from-emerald-50 to-teal-50" />
-              <ActionCard href="/boissons" emoji="🍻" label="Boissons" desc="Pool partagé" bg="from-yellow-50 to-amber-50" />
+              <ActionCard href="/epicerie" emoji="🛒" label="Épicerie & Boissons" desc="Liste + prix" bg="from-emerald-50 to-teal-50" />
             </>
           )}
         </div>
@@ -123,6 +131,12 @@ export default async function DashboardPage() {
         confirmedCount={confirmedCount}
         totalParticipants={totalParticipants}
         allConfirmed={allConfirmed}
+        perDrinker={split.perDrinker}
+        perNonDrinker={split.perNonDrinker}
+        alcoholDrinkersCount={split.alcoholDrinkersCount}
+        myShare={myShare}
+        meName={me?.name.split(" ")[0] ?? null}
+        meDrinksAlcohol={me?.drinksAlcohol ?? null}
       />
 
       {/* INFO PRATIQUE — editable for organizer */}
@@ -203,13 +217,15 @@ function ConfirmationsBlock({ participants, confirmedCount }: { participants: Aw
 function CostsBlock({
   siteCost, rentalCost, groceryCost, drinksCost, totalCost,
   confirmedCount, totalParticipants, allConfirmed,
+  perDrinker, perNonDrinker, alcoholDrinkersCount, myShare, meName, meDrinksAlcohol,
 }: {
   siteCost: number; rentalCost: number; groceryCost: number; drinksCost: number; totalCost: number;
   confirmedCount: number; totalParticipants: number; allConfirmed: boolean;
+  perDrinker: number; perNonDrinker: number; alcoholDrinkersCount: number;
+  myShare: number | null; meName: string | null; meDrinksAlcohol: boolean | null;
 }) {
-  // Show /pax only when all have confirmed; otherwise show estimated range
-  const costPerPaxIfAll = totalParticipants > 0 ? totalCost / totalParticipants : 0;
-  const costPerPaxIfConfirmed = confirmedCount > 0 ? totalCost / confirmedCount : 0;
+  const hasMixedAlcohol = alcoholDrinkersCount > 0 && alcoholDrinkersCount < confirmedCount;
+  const nonDrinkersCount = confirmedCount - alcoholDrinkersCount;
 
   return (
     <section>
@@ -221,25 +237,43 @@ function CostsBlock({
           <CostItem label="Épicerie" value={groceryCost} placeholder="À remplir" />
           <CostItem label="Boissons" value={drinksCost} placeholder="À remplir" />
         </div>
-        <div className="border-t border-border pt-3">
+        <div className="border-t border-border pt-3 space-y-2">
           <div className="flex justify-between items-baseline gap-3">
             <span className="text-sm text-muted">Total</span>
             <span className="text-2xl font-bold tabular-nums">{formatCurrency(totalCost)}</span>
           </div>
-          {allConfirmed ? (
-            <div className="flex justify-between items-baseline gap-3 mt-1">
-              <span className="text-sm text-muted">/ personne ({totalParticipants})</span>
-              <span className="text-lg font-bold text-primary">{formatCurrency(costPerPaxIfAll)}</span>
+
+          {!allConfirmed && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
+              ⏳ {confirmedCount}/{totalParticipants} confirmés — coût final calculé quand tous ont confirmé.
             </div>
-          ) : (
-            <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
-              <div className="font-semibold text-amber-900 mb-1">
-                ⏳ {confirmedCount}/{totalParticipants} confirmés — coût final calculé quand tous ont confirmé
+          )}
+
+          {myShare !== null && (
+            <div className="bg-teal-50 border border-teal-200 rounded-lg p-3 flex justify-between items-baseline">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-teal-700">Ta part, {meName}</div>
+                <div className="text-xs text-muted">{meDrinksAlcohol ? "🍻 avec alcool" : "🚫🍺 sans alcool"}</div>
               </div>
-              <div className="text-amber-800">
-                Estimé si tous viennent ({totalParticipants} pers) : <strong>{formatCurrency(costPerPaxIfAll)}</strong> / pers
-              </div>
+              <span className="text-xl font-bold tabular-nums text-teal-900">{formatCurrency(myShare)}</span>
             </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-2 text-sm">
+            <div className="bg-slate-50 rounded-lg p-2">
+              <div className="text-xs text-muted">🍻 Avec alcool ({alcoholDrinkersCount})</div>
+              <div className="font-semibold tabular-nums">{formatCurrency(perDrinker)}</div>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-2">
+              <div className="text-xs text-muted">🚫🍺 Sans alcool ({nonDrinkersCount})</div>
+              <div className="font-semibold tabular-nums">{formatCurrency(perNonDrinker)}</div>
+            </div>
+          </div>
+
+          {hasMixedAlcohol && (
+            <p className="text-xs text-muted">
+              Bouffe partagée sur {confirmedCount} pers, alcool partagé sur {alcoholDrinkersCount} buveurs.
+            </p>
           )}
         </div>
       </div>

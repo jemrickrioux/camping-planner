@@ -16,7 +16,7 @@ export default async function StockPersoPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl md:text-3xl font-bold mb-1">🎒 Stock perso</h1>
-        <p className="text-muted text-sm">Chacun coche ce qu'il amène. Ligne verte = tout le monde a coché.</p>
+        <p className="text-muted text-sm">Suis le statut de chaque item: 🛒 à acheter → 📦 détenu → 🎒 dans ton sac. Mets ⏭️ ignorer si tu en as pas besoin.</p>
       </div>
       <AddPersoForm tripId={trip.id} />
 

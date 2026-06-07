@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import type { Participant } from "@/db/schema";
 import type { EpicerieRow } from "./page";
-import { updateGroceryItem, updateDrink } from "@/app/actions";
+import { updateGroceryItem, updateDrink, deleteDrink, deleteGroceryItem } from "@/app/actions";
 import { useWhoAmI } from "@/components/who-am-i";
 
 const SECTION_META: Record<string, { color: string; emoji: string }> = {
@@ -111,6 +111,15 @@ function SectionRow({ row, canEdit }: { row: EpicerieRow; canEdit: boolean }) {
     });
   };
 
+  const remove = () => {
+    if (!canEdit) return;
+    if (!confirm(`Supprimer « ${row.name} » ?`)) return;
+    startTransition(() => {
+      if (isDrink) deleteDrink(realId);
+      else deleteGroceryItem(realId);
+    });
+  };
+
   // Use pack purchase qty if available, else raw need
   const hasPack = row.packsToBuy !== null && row.packLabel;
   const purchaseQty = hasPack
@@ -161,6 +170,17 @@ function SectionRow({ row, canEdit }: { row: EpicerieRow; canEdit: boolean }) {
         <span className="text-sm font-semibold tabular-nums whitespace-nowrap">
           {formatCurrency(row.effectiveCost)}
         </span>
+      )}
+
+      {canEdit && (
+        <button
+          onClick={remove}
+          className="text-rose-500 hover:text-rose-700 text-lg leading-none px-1 shrink-0"
+          title="Supprimer"
+          aria-label="Supprimer"
+        >
+          ✕
+        </button>
       )}
     </div>
   );
@@ -264,21 +284,34 @@ function GridCard({ row, canEdit }: { row: EpicerieRow; canEdit: boolean }) {
   const [packRoundUp, setPackRoundUp] = useState(row.packRoundUp);
   const [cost, setCost] = useState(row.cost ?? "");
   const [confirmed, setConfirmed] = useState(row.confirmed ?? false);
+  const [drinkQty, setDrinkQty] = useState(String(row.totalRaw || 1));
   const [, startTransition] = useTransition();
   const isDrink = row.source === "drink";
   const realId = isDrink ? row.id - 1000000 : row.id;
   // Simple cost mode for: drinks (alcool) and notes (condiments) — no pack pricing
   const simpleMode = isDrink || row.source === "note";
 
-  const save = (data: Parameters<typeof updateGroceryItem>[1]) => {
+  const save = (data: Parameters<typeof updateGroceryItem>[1] & { quantity?: number }) => {
     if (!canEdit) return;
     startTransition(() => {
       if (isDrink) {
-        // drinks: only support cost + confirmed
-        updateDrink(realId, { cost: data.cost ?? undefined, confirmed: data.confirmed });
+        updateDrink(realId, {
+          cost: data.cost ?? undefined,
+          confirmed: data.confirmed,
+          quantity: data.quantity,
+        });
       } else {
         updateGroceryItem(realId, data);
       }
+    });
+  };
+
+  const remove = () => {
+    if (!canEdit) return;
+    if (!confirm(`Supprimer « ${row.name} » ?`)) return;
+    startTransition(() => {
+      if (isDrink) deleteDrink(realId);
+      else deleteGroceryItem(realId);
     });
   };
 
@@ -325,20 +358,43 @@ function GridCard({ row, canEdit }: { row: EpicerieRow; canEdit: boolean }) {
             )}
           </div>
         )}
+        {canEdit && (
+          <button
+            onClick={remove}
+            className="text-rose-500 hover:text-rose-700 text-lg leading-none px-1 shrink-0"
+            title="Supprimer"
+            aria-label="Supprimer"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <fieldset disabled={!canEdit} className={`space-y-2 ${!canEdit ? "opacity-60" : ""}`}>
         {simpleMode ? (
-          <label className="flex items-center gap-2">
-            <span className="text-xs text-muted shrink-0">Total $</span>
-            <input
-              type="number" step="0.01" value={cost ?? ""}
-              onChange={(e) => setCost(e.target.value)}
-              onBlur={() => save({ cost: cost === "" ? null : cost })}
-              placeholder="—"
-              className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums disabled:bg-slate-50"
-            />
-          </label>
+          <div className="flex items-center gap-2 flex-wrap">
+            {isDrink && (
+              <label className="flex items-center gap-1">
+                <span className="text-xs text-muted shrink-0">Qté</span>
+                <input
+                  type="number" min="0" value={drinkQty}
+                  onChange={(e) => setDrinkQty(e.target.value)}
+                  onBlur={() => save({ quantity: parseInt(drinkQty, 10) || 0 })}
+                  className="w-16 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums disabled:bg-slate-50"
+                />
+              </label>
+            )}
+            <label className="flex items-center gap-2 flex-1 min-w-[140px]">
+              <span className="text-xs text-muted shrink-0">Total $</span>
+              <input
+                type="number" step="0.01" value={cost ?? ""}
+                onChange={(e) => setCost(e.target.value)}
+                onBlur={() => save({ cost: cost === "" ? null : cost })}
+                placeholder="—"
+                className="flex-1 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums disabled:bg-slate-50"
+              />
+            </label>
+          </div>
         ) : (
           <>
             <div className="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
@@ -400,16 +456,33 @@ function GridRow({ row, canEdit }: { row: EpicerieRow; canEdit: boolean }) {
   const [packRoundUp, setPackRoundUp] = useState(row.packRoundUp);
   const [cost, setCost] = useState(row.cost ?? "");
   const [confirmed, setConfirmed] = useState(row.confirmed ?? false);
+  const [drinkQty, setDrinkQty] = useState(String(row.totalRaw || 1));
   const [, startTransition] = useTransition();
   const isDrink = row.source === "drink";
   const realId = isDrink ? row.id - 1000000 : row.id;
   const simpleMode = isDrink || row.source === "note";
 
-  const save = (data: Parameters<typeof updateGroceryItem>[1]) => {
+  const save = (data: Parameters<typeof updateGroceryItem>[1] & { quantity?: number }) => {
     if (!canEdit) return;
     startTransition(() => {
-      if (isDrink) updateDrink(realId, { cost: data.cost ?? undefined, confirmed: data.confirmed });
-      else updateGroceryItem(realId, data);
+      if (isDrink) {
+        updateDrink(realId, {
+          cost: data.cost ?? undefined,
+          confirmed: data.confirmed,
+          quantity: data.quantity,
+        });
+      } else {
+        updateGroceryItem(realId, data);
+      }
+    });
+  };
+
+  const remove = () => {
+    if (!canEdit) return;
+    if (!confirm(`Supprimer « ${row.name} » ?`)) return;
+    startTransition(() => {
+      if (isDrink) deleteDrink(realId);
+      else deleteGroceryItem(realId);
     });
   };
 
@@ -443,15 +516,40 @@ function GridRow({ row, canEdit }: { row: EpicerieRow; canEdit: boolean }) {
         </button>
       </td>
       <td className="px-2 py-1.5">
-        <div className={`font-medium text-sm ${confirmed ? "line-through opacity-60" : ""}`}>{row.name}</div>
+        <div className="flex items-center gap-2">
+          <div className={`flex-1 min-w-0 font-medium text-sm ${confirmed ? "line-through opacity-60" : ""}`}>{row.name}</div>
+          {canEdit && (
+            <button
+              onClick={remove}
+              className="text-rose-500 hover:text-rose-700 text-sm shrink-0"
+              title="Supprimer"
+              aria-label="Supprimer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         {row.notes && <div className="text-xs text-muted">{row.notes}</div>}
       </td>
       <td className="px-2 py-1.5 text-right text-xs tabular-nums whitespace-nowrap text-muted">{displayBesoin}</td>
 
       {simpleMode ? (
-        // Simple cost mode: take 4 columns (Pack/Taille/Prix/À acheter) with one big "Total $" input
+        // Simple cost mode: take 4 columns (Pack/Taille/Prix/À acheter) with quantity (drinks) + total
         <td colSpan={4} className="px-2 py-1.5">
           <div className="flex items-center gap-2 justify-end">
+            {isDrink && (
+              <>
+                <span className="text-xs text-muted">Qté</span>
+                <input
+                  type="number" min="0"
+                  value={drinkQty}
+                  onChange={(e) => setDrinkQty(e.target.value)}
+                  onBlur={() => save({ quantity: parseInt(drinkQty, 10) || 0 })}
+                  disabled={!canEdit}
+                  className="w-16 px-2 py-1.5 text-sm border border-border rounded-md text-right bg-white tabular-nums disabled:bg-slate-50 disabled:opacity-60"
+                />
+              </>
+            )}
             <span className="text-xs text-muted">Total $</span>
             <input
               type="number" step="0.01"

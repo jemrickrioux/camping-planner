@@ -1,8 +1,11 @@
 import { db, schema } from "@/lib/db";
 import { getCurrentTrip, getParticipants, getConfirmedCount, getMealSlots } from "@/lib/trip";
+import { getCurrentParticipant } from "@/lib/auth";
+import { splitCosts, personalShare } from "@/lib/cost";
 import { eq } from "drizzle-orm";
 import { EpicerieTable } from "./epicerie-table";
 import { AddGroceryForm } from "./add-grocery-form";
+import { AddDrinkForm } from "@/app/boissons/add-drink-form";
 import { isAtMealWithSlots, getMealKey } from "@/lib/meals";
 
 export const dynamic = "force-dynamic";
@@ -150,17 +153,26 @@ export default async function EpiceriePage() {
     });
   });
 
-  const totalCost = rows.reduce((sum, r) => sum + r.effectiveCost, 0);
-  const costPerPax = confirmedCount > 0 ? totalCost / confirmedCount : 0;
+  const groceryTotalCost = rows.filter((r) => r.source !== "drink").reduce((s, r) => s + r.effectiveCost, 0);
+  const drinksTotalCost = rows.filter((r) => r.source === "drink").reduce((s, r) => s + r.effectiveCost, 0);
+  const totalCost = groceryTotalCost + drinksTotalCost;
+  const split = splitCosts({
+    participants,
+    fixedCost: 0,
+    groceryCost: groceryTotalCost,
+    alcoholCost: drinksTotalCost,
+  });
+  const me = await getCurrentParticipant();
+  const myShare = me ? personalShare(split, me.drinksAlcohol) : null;
   const allConfirmed = confirmedCount === totalParticipants;
   const someoneNoArrival = participants.some((p) => p.confirmed === "OUI" && (!p.arrivalMeal || !p.departureMeal));
 
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl md:text-3xl font-bold mb-1">🛒 Épicerie</h1>
+        <h1 className="text-2xl md:text-3xl font-bold mb-1">🛒 Épicerie & Boissons</h1>
         <p className="text-muted text-sm">
-          Calculée par <strong>présence à chaque repas</strong> : qté/pers × nb attendu au repas. Si quelqu'un arrive samedi midi, on cuisine pas pour lui le vendredi soir.
+          Bouffe calculée par <strong>présence à chaque repas</strong>. Boissons en pool. L'alcool est divisé entre les buveurs seulement.
         </p>
       </div>
 
@@ -170,13 +182,38 @@ export default async function EpiceriePage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Items" value={rows.length} accent="primary" />
-        <Stat label="Total estimé" value={formatCurrency(totalCost)} accent="ok" hint={!allConfirmed ? `${confirmedCount}/${totalParticipants} confirmés` : undefined} />
-        <Stat label="Coût / pers" value={allConfirmed ? formatCurrency(costPerPax) : "—"} accent="ok" hint={!allConfirmed ? "Attendre toutes confirmations" : undefined} />
+        <Stat label="Bouffe" value={formatCurrency(groceryTotalCost)} accent="ok" hint={`÷ ${split.confirmedCount} pers`} />
+        <Stat label="Alcool" value={formatCurrency(drinksTotalCost)} accent="ok" hint={`÷ ${split.alcoholDrinkersCount} buveurs`} />
+        <Stat label="Total" value={formatCurrency(totalCost)} accent="primary" hint={!allConfirmed ? `${confirmedCount}/${totalParticipants} confirmés` : undefined} />
       </div>
 
-      <AddGroceryForm tripId={trip.id} />
+      {myShare !== null && me && (
+        <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 flex justify-between items-center">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-teal-700">Ta part, {me.name.split(" ")[0]}</div>
+            <div className="text-xs text-muted">{me.drinksAlcohol ? "🍻 avec alcool" : "🚫🍺 sans alcool"}</div>
+          </div>
+          <span className="text-2xl font-bold tabular-nums text-teal-900">{formatCurrency(myShare)}</span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="bg-slate-50 rounded-lg p-3">
+          <div className="text-xs text-muted">🍻 Coût avec alcool</div>
+          <div className="font-semibold text-lg tabular-nums">{formatCurrency(split.perDrinker)}</div>
+        </div>
+        <div className="bg-slate-50 rounded-lg p-3">
+          <div className="text-xs text-muted">🚫🍺 Coût sans alcool</div>
+          <div className="font-semibold text-lg tabular-nums">{formatCurrency(split.perNonDrinker)}</div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <AddGroceryForm tripId={trip.id} />
+        <AddDrinkForm tripId={trip.id} />
+      </div>
 
       <EpicerieTable rows={rows} participants={participants} tripId={trip.id} />
     </div>

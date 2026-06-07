@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { Participant } from "@/db/schema";
-import { updateParticipant, updateArrivalDeparture, setCanManageGrocery } from "@/app/actions";
+import { updateParticipant, updateArrivalDeparture, setCanManageGrocery, setDrinksAlcohol } from "@/app/actions";
 import { useWhoAmI, Avatar } from "@/components/who-am-i";
 import { formatPhone } from "@/lib/format";
 import type { MealSlot } from "@/lib/meals";
@@ -33,6 +33,7 @@ function Card({ participant, canEdit, isMe, mealSlots }: { participant: Particip
   const [arrival, setArrival] = useState(participant.arrivalMeal ?? "");
   const [departure, setDeparture] = useState(participant.departureMeal ?? "");
   const [canGrocery, setCanGrocery] = useState(participant.canManageGrocery);
+  const [drinksAlcohol, setDrinksAlcoholState] = useState(participant.drinksAlcohol);
   const [, startTransition] = useTransition();
 
   const save = (data: Partial<Participant>) => {
@@ -47,6 +48,12 @@ function Card({ participant, canEdit, isMe, mealSlots }: { participant: Particip
     const v = !canGrocery;
     setCanGrocery(v);
     startTransition(() => setCanManageGrocery(participant.id, v));
+  };
+
+  const toggleAlcohol = () => {
+    const v = !drinksAlcohol;
+    setDrinksAlcoholState(v);
+    startTransition(() => setDrinksAlcohol(participant.id, v));
   };
 
   const handlePhoneChange = (raw: string) => {
@@ -129,22 +136,41 @@ function Card({ participant, canEdit, isMe, mealSlots }: { participant: Particip
         />
       </div>
 
-      {isOrganizer ? (
-        <label className="flex items-center gap-2 text-sm border-t border-border pt-2 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={canGrocery}
-            onChange={toggleGrocery}
-            className="w-4 h-4 accent-emerald-600"
-          />
-          <span>🛒 Équipe épicerie</span>
-          <span className="text-xs text-muted">— peut modifier la liste</span>
-        </label>
-      ) : participant.canManageGrocery ? (
-        <div className="flex items-center gap-2 text-sm border-t border-border pt-2 text-emerald-700">
-          🛒 <span>Équipe épicerie</span>
-        </div>
-      ) : null}
+      <div className="border-t border-border pt-2 space-y-1.5">
+        {canEdit ? (
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!drinksAlcohol}
+              onChange={toggleAlcohol}
+              className="w-4 h-4 accent-amber-600"
+            />
+            <span>🚫🍺 Sans alcool</span>
+            <span className="text-xs text-muted">— pas chargé pour les boissons</span>
+          </label>
+        ) : !participant.drinksAlcohol ? (
+          <div className="flex items-center gap-2 text-sm text-amber-700">
+            🚫🍺 <span>Sans alcool</span>
+          </div>
+        ) : null}
+
+        {isOrganizer ? (
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={canGrocery}
+              onChange={toggleGrocery}
+              className="w-4 h-4 accent-emerald-600"
+            />
+            <span>🛒 Équipe épicerie</span>
+            <span className="text-xs text-muted">— peut modifier la liste</span>
+          </label>
+        ) : participant.canManageGrocery ? (
+          <div className="flex items-center gap-2 text-sm text-emerald-700">
+            🛒 <span>Équipe épicerie</span>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -68,6 +68,17 @@ export async function setCanManageGrocery(participantId: number, canManage: bool
   revalidatePath("/epicerie");
 }
 
+export async function setDrinksAlcohol(participantId: number, drinksAlcohol: boolean) {
+  await assertSelfOrOrganizer(participantId);
+  await db
+    .update(schema.participants)
+    .set({ drinksAlcohol })
+    .where(eq(schema.participants.id, participantId));
+  revalidatePath("/participants");
+  revalidatePath("/epicerie");
+  revalidatePath("/");
+}
+
 // ── Trip details (organizer only) ────────────────────────────────────────
 export async function updateTrip(id: number, data: Partial<{
   destination: string;
@@ -134,16 +145,31 @@ export async function updateArrivalDeparture(id: number, data: {
 }
 
 // ── Stock perso ──────────────────────────────────────────────────────────
-export async function togglePersoStockCheck(participantId: number, persoStockItemId: number, hasIt: boolean) {
+import { PERSO_STATUSES, type PersoStatus } from "@/db/schema";
+
+export async function setPersoStockStatus(
+  participantId: number,
+  persoStockItemId: number,
+  status: PersoStatus,
+) {
   await assertSelfOrOrganizer(participantId);
+  if (!PERSO_STATUSES.includes(status)) {
+    throw new Error(`Statut invalide: ${status}`);
+  }
+  const hasIt = status === "owned" || status === "packed";
   await db
     .insert(schema.persoStockChecks)
-    .values({ participantId, persoStockItemId, hasIt })
+    .values({ participantId, persoStockItemId, status, hasIt })
     .onConflictDoUpdate({
       target: [schema.persoStockChecks.participantId, schema.persoStockChecks.persoStockItemId],
-      set: { hasIt, updatedAt: new Date() },
+      set: { status, hasIt, updatedAt: new Date() },
     });
   revalidatePath("/stock-perso");
+}
+
+/** @deprecated kept for backward compat — use setPersoStockStatus */
+export async function togglePersoStockCheck(participantId: number, persoStockItemId: number, hasIt: boolean) {
+  await setPersoStockStatus(participantId, persoStockItemId, hasIt ? "owned" : "to_buy");
 }
 
 // ── Stock commun ─────────────────────────────────────────────────────────

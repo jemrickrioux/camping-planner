@@ -58,6 +58,7 @@ export const participants = pgTable("participants", {
   liftReturnTime: text("lift_return_time"),
   liftReturnDriverId: integer("lift_return_driver_id"),
   canManageGrocery: boolean("can_manage_grocery").notNull().default(false),
+  drinksAlcohol: boolean("drinks_alcohol").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
@@ -73,10 +74,14 @@ export const persoStockChecks = pgTable("perso_stock_checks", {
   participantId: integer("participant_id").notNull().references(() => participants.id, { onDelete: "cascade" }),
   persoStockItemId: integer("perso_stock_item_id").notNull().references(() => persoStockItems.id, { onDelete: "cascade" }),
   hasIt: boolean("has_it").notNull().default(false),
+  status: text("status").notNull().default("to_buy"), // 'to_buy' | 'owned' | 'packed' | 'ignored'
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (table) => ({
   pk: primaryKey({ columns: [table.participantId, table.persoStockItemId] }),
 }));
+
+export const PERSO_STATUSES = ["to_buy", "owned", "packed", "ignored"] as const;
+export type PersoStatus = (typeof PERSO_STATUSES)[number];
 
 export const communStockItems = pgTable("commun_stock_items", {
   id: serial("id").primaryKey(),
