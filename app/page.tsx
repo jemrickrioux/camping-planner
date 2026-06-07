@@ -62,12 +62,13 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* COÛT — cadeau */}
+      {/* COÛT — cadeau + frais perso */}
       <section>
         <h2 className="text-base font-semibold mb-3 text-muted">💰 Coût</h2>
         <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 text-center">
           <div className="text-4xl font-bold tabular-nums text-emerald-900">0 $</div>
-          <div className="text-sm text-emerald-800 mt-1">Thanks for joining the group :)</div>
+          <div className="text-sm text-emerald-800 mt-1">+ ta bouffe et ta location de canot</div>
+          <div className="text-xs text-emerald-700/80 mt-2">Thanks for joining the group :)</div>
         </div>
       </section>
 
