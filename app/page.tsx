@@ -53,11 +53,10 @@ export default async function DashboardPage() {
         <h2 className="text-base font-semibold mb-3 text-muted">Actions rapides</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           <ActionCard href="/lifts" emoji="🚗" label="Lifts" desc="Aller + retour" bg="from-sky-50 to-cyan-50" />
+          <ActionCard href="/stock-perso" emoji="🎒" label="Stock perso" desc="Ta liste à toi" bg="from-amber-50 to-orange-50" />
+          <ActionCard href="/stock-commun" emoji="📦" label="Stock commun" desc={`${communSansOwner.count ?? 0} sans owner`} bg="from-rose-50 to-pink-50" badge={communSansOwner.count ?? 0} />
           {isOrganizer && (
-            <>
-              <ActionCard href="/canots" emoji="🛶" label="Canots" desc="Location + placement" bg="from-teal-50 to-cyan-50" />
-              <ActionCard href="/stock-commun" emoji="📦" label="Stock commun" desc={`${communSansOwner.count ?? 0} sans owner`} bg="from-rose-50 to-pink-50" badge={communSansOwner.count ?? 0} />
-            </>
+            <ActionCard href="/canots" emoji="🛶" label="Canots" desc="Location + placement" bg="from-teal-50 to-cyan-50" />
           )}
         </div>
       </section>

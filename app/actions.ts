@@ -306,6 +306,7 @@ export async function addCommunStockItem(tripId: number, data: { name: string; q
 }
 
 export async function deleteCommunStockItem(id: number) {
+  await assertOrganizer();
   await db.delete(schema.communStockItems).where(eq(schema.communStockItems.id, id));
   revalidatePath("/stock-commun");
 }

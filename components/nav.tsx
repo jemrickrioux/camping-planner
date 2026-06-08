@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { href: "/lifts", label: "Lifts", emoji: "🚗", forAll: true },
   { href: "/canots", label: "Canots", emoji: "🛶", forAll: false },
   { href: "/stock-perso", label: "Stock perso", emoji: "🎒", forAll: true },
-  { href: "/stock-commun", label: "Stock commun", emoji: "📦", forAll: false },
+  { href: "/stock-commun", label: "Stock commun", emoji: "📦", forAll: true },
   { href: "/menu", label: "Menu", emoji: "🍽️", forAll: false },
   { href: "/epicerie", label: "Épicerie & Boissons", emoji: "🛒", forAll: false },
   { href: "/plan-action", label: "Plan", emoji: "✅", forAll: false },

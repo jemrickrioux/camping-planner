@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import type { CommunStockItem, Participant } from "@/db/schema";
-import { updateCommunStock } from "@/app/actions";
+import { updateCommunStock, deleteCommunStockItem } from "@/app/actions";
 import { useWhoAmI, Avatar } from "@/components/who-am-i";
 
 export function StockCommunTable({
@@ -72,6 +72,7 @@ function ItemCard({
   const [ownerId, setOwnerId] = useState(item.ownerId);
   const [isGroup, setIsGroup] = useState(item.isGroup ?? false);
   const [confirmed, setConfirmed] = useState(item.confirmed ?? false);
+  const [quantity, setQuantity] = useState(item.quantity ?? 1);
   const [, startTransition] = useTransition();
 
   const owner = ownerId ? participants.find((p) => p.id === ownerId) : null;
@@ -81,7 +82,7 @@ function ItemCard({
   const canRelease = isMine || isOrganizer;
   const canChangeOwner = isOrganizer;
 
-  const save = (data: { ownerId?: number | null; isGroup?: boolean; confirmed?: boolean }) => {
+  const save = (data: { ownerId?: number | null; isGroup?: boolean; confirmed?: boolean; quantity?: number }) => {
     startTransition(() => updateCommunStock(item.id, data));
   };
 
@@ -110,6 +111,21 @@ function ItemCard({
     save({ confirmed: newVal });
   };
 
+  const handleQuantityBlur = () => {
+    const q = Math.max(1, Math.floor(quantity || 1));
+    if (q !== (item.quantity ?? 1)) {
+      setQuantity(q);
+      save({ quantity: q });
+    }
+  };
+
+  const handleDelete = () => {
+    if (!confirm(`Supprimer « ${item.name} » du stock commun ?`)) return;
+    startTransition(() => deleteCommunStockItem(item.id));
+  };
+
+  const canEditQuantity = isMine || isGroup || isOrganizer;
+
   const borderColor = confirmed
     ? "border-emerald-300"
     : !hasOwner
@@ -129,12 +145,36 @@ function ItemCard({
       <div className="flex items-start gap-2">
         <div className="flex-1 min-w-0">
           <div className="font-semibold">{item.name}</div>
-          {item.quantity && item.quantity > 1 && (
-            <div className="text-xs text-muted">Quantité : {item.quantity}</div>
-          )}
+          <div className="text-xs text-muted flex items-center gap-1.5 mt-0.5">
+            <span>Qté :</span>
+            {canEditQuantity ? (
+              <input
+                type="number"
+                min="1"
+                value={quantity}
+                onChange={(e) => setQuantity(parseInt(e.target.value, 10) || 1)}
+                onBlur={handleQuantityBlur}
+                className="w-14 px-1.5 py-0.5 border border-border rounded text-right bg-white tabular-nums"
+              />
+            ) : (
+              <span className="font-semibold tabular-nums">{quantity}</span>
+            )}
+          </div>
           {item.notes && <div className="text-xs text-muted mt-1">{item.notes}</div>}
         </div>
-        {confirmed && <span className="text-emerald-600 text-lg">✓</span>}
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {confirmed && <span className="text-emerald-600 text-lg">✓</span>}
+          {isOrganizer && (
+            <button
+              onClick={handleDelete}
+              className="text-rose-500 hover:text-rose-700 text-sm"
+              title="Supprimer"
+              aria-label="Supprimer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">

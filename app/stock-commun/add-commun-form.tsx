@@ -3,11 +3,8 @@
 import { useState, useTransition } from "react";
 import { addCommunStockItem } from "@/app/actions";
 import { AddButton } from "@/components/add-button";
-import { useWhoAmI } from "@/components/who-am-i";
 
 export function AddCommunForm({ tripId }: { tripId: number }) {
-  const { isOrganizer } = useWhoAmI();
-  if (!isOrganizer) return null;
   return (
     <AddButton label="Ajouter un item au stock commun">
       {(close) => <Form tripId={tripId} close={close} />}
